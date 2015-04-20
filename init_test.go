@@ -4,7 +4,7 @@ import (
 	"os"
 	"stretchr/testify/assert"
 	"testing"
-	"testutils"
+	"whitecypher/gapp/testutils"
 )
 
 var (
@@ -27,6 +27,8 @@ func TestMain(m *testing.M) {
 
 func TestIsGappProject(t *testing.T) {
 	assert := assert.New(t)
+
+	t.Log(dir.GetPath())
 
 	assert.False(IsGappProject(dir.GetPath()), "Expected a false value")
 }

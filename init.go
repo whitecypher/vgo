@@ -5,10 +5,13 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
+	"path/filepath"
 )
 
 func IsGappProject(path string) bool {
-	if _, err := os.Stat(path); os.IsNotExist(err) {
+	gappPath := filepath.Join(path, "gapp.json")
+
+	if _, err := os.Stat(gappPath); err != nil {
 		return false
 	}
 
