@@ -1,15 +1,12 @@
 {
-    "settings": {
-        "GoSublime": {
-            "env": {
-                "GOPATH": "$HOME/Projects/WhiteCypher/gapp:$GOPATH"
-            }
-        }
-    },
-	"folders":
-	[
+	"settings":
+	{
+		"GoSublime":
 		{
-			"path": "."
+			"env":
+			{
+				"GOPATH": "$HOME/Projects/WhiteCypher/gapp/vendor:$GOPATH"
+			}
 		}
-	],
+	}
 }

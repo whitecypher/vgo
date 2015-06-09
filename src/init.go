@@ -8,8 +8,18 @@ import (
 	"path/filepath"
 )
 
-func IsGappProject(path string) bool {
-	gappPath := filepath.Join(path, "gapp.json")
+func initialize(args []string) {
+	// cwd, err := os.Getwd()
+	// a := app{}
+
+	// if err != nil {
+
+	// }
+	// fmt.Println()
+}
+
+func isGappProject(path string) bool {
+	gappPath := filepath.Join(path, GAPP_FILE)
 
 	if _, err := os.Stat(gappPath); err != nil {
 		return false
@@ -18,8 +28,8 @@ func IsGappProject(path string) bool {
 	return true
 }
 
-func InitGappProject(projRootDir string, app Application) error {
-	js, err := json.Marshal(app)
+func initGappProject(projRootDir string, a app) error {
+	js, err := json.Marshal(a)
 
 	if err != nil {
 		return err

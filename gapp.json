@@ -1,6 +1,13 @@
 {
 	"name" : "whitecypher/gapp",
-	"version" : "0.0.0",
+	"description": "Go application dependency and build management simplified",
+	"short_imports": false,
+	"authors" : [
+		{
+			"name": "Merten van Gerven",
+			"email": "merten.vg@gmail.com"
+		}
+	],
 	"packages" : {
 		
 	}

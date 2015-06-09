@@ -2,9 +2,10 @@ package main
 
 import (
 	"os"
-	"stretchr/testify/assert"
 	"testing"
-	"whitecypher/gapp/testutils"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/whitecypher/gapp/testutils"
 )
 
 var (

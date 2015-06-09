@@ -1,13 +1,26 @@
-# Compiled Object files, Static and Dynamic libs (Shared Objects)
+### Project ignores
+
+
+### Gapp ignores
+# When revision locking ignoore the vendor dir
+/vendor/
+# If vendoring then at least ignore vendor/src/app
+/vendor/src/app
+
+### Sublime files
+*.sublime-project
+*.sublime-workspace
+
+### Compiled Object files, Static and Dynamic libs (Shared Objects)
 *.o
 *.a
 *.so
 
-# Folders
+### Folders
 _obj
 _test
 
-# Architecture specific extensions/prefixes
+### Architecture specific extensions/prefixes
 *.[568vq]
 [568vq].out
 

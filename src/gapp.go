@@ -1,75 +1,128 @@
 // Gapp - Go Application Tool2
-
-//  # Clone a repository and symlink to GOPATH using package name from gapp.json
-//  gapp clone {git@github.com/whitecypher/gapp}
-
+//
 //  # Initialize an existing project with
-//  gapp init [package/name [version]]
-
-//  gapp bump {major|minor|fix]
-
-//  gapp get [package/url]
-//  gapp add {package/url}
-
-//  gapp install
-//  gapp update [package/url|package/name]
-
-//  gapp run
-
-//  gapp build
-
+//  gapp init
+//
 //  # Test project, or package with optional recursive flag to include subpackages in tests.
+//  # Optional deps flag may also be added to also include tests for dependencies.
 //  # Each package must be run independantly since coverage reports cannot natively be run on
 //  # multipackage tests.
-//  gapp test [-r] [package/name]
-//  gapp test [--recursive] [package/name]
-
-//  # Unmatched actions should fall through to `go` command automatically
-//  gapp ...
+//  gapp test [--recursive (-r)] [--deps (-d)] [package/name]
 //
+//	# Add a dependency and version
+// 	gapp get [{packagename[github.com/codegangsta/cli]} [{tag|branch|commit-hash|version-compatibility[~1.4.1]}]
 //
+//  # Update a dependency
+//  gapp update [{packagename[github.com/codegangsta/cli]} [{tag|branch|commit-hash|version-compatibility[~1.4.1]}]
 //
-//	#
-// 	gapp init
-//
-//	#
-// 	gapp get [{packagename[github.com/codegangsta/cli]} [{version-compatibility[~1.4.1]}]
-//
-//  #
-//  gapp update [{packagename[github.com/codegangsta/cli]} [{version-compatibility[~1.4.1]}]
-//
-//  #
+//  # Remove a dependency
 //  gapp remove {packagename[github.com/codegangsta/cli]}
 //
-//	#
+//	# Install the stored dependencies
 //	gapp install
 //
-// 	#
+// 	# Run the application after installing dependencies
 // 	gapp run
 //
-// 	#
+// 	# Run the tests after installing dependencies
 //  gapp test
 //
-// 	#
+// 	# Build the application after installing dependencies
 //  gapp build
 //
-//  #
+//  # Run a go command through gapp
 //  gapp go
+//
+//  # Unmatched actions should fall through to `go` command automatically
+//  gapp ...
 //
 package main
 
 import (
-	"codegangsta/cli"
 	"fmt"
 	"os"
 	"os/exec"
-	_ "time"
-	_ "whitecypher/gapp/testutils"
-	// "golang.org/x/tools/refactor/importgraph"
+
+	"github.com/codegangsta/cli"
 )
+
+const (
+	GAPP_FILE string = "gapp.json"
+	LOCK_FILE string = "gapp.lock"
+)
+
+// SourcePath contains a dependency source path e.g. "github.com/whitecypher/gapp"
+type sourcePath string
+
+// LocalPath contains path used locally for import into the application
+//
+//  import "{local-path}"
+type localPath string
+
+// Version compatibily string e.g. "~1.0.0" or "1.*"
+type version string
+
+// DepVerMap contains a mapping of dependency urls to version compatibility strings
+//
+//  deps := DepVerMap{
+//  	"github.com/whitecypher/gapp": "1.*",
+//  }
+type depVerMap map[sourcePath]version
+
+// Author contains information about the application author
+type author struct {
+	// Name of author
+	Name string `json:"name"`
+	// Email of author
+	Email string `json:"email"`
+}
+
+// Package contains information about an application dependency
+type pkg struct {
+	// Source contains the package remote path
+	Source sourcePath `json:"source"`
+	// Local contains the local package path used for import
+	Local localPath `json:"local"`
+	// Version contains the compatibily string e.g. "~1.0.0" or "1.*"
+	Version version `json:"version"`
+}
+
+// Dist contains information about an installed application dependency
+type dist struct {
+	*pkg
+
+	// Reference contains the version hash or tag
+	Reference string `json:"reference"`
+}
+
+// Lock contains information about previous installed depencies and their
+// corresponding version reference.
+type lock struct {
+	// List of distributables installed
+	Dists map[localPath]dist `json:"dists"`
+}
+
+// Application contains information about the app under development.
+// Primarily to store dependencies and version criteria for the application.
+// Persisted in gapp.json.
+type app struct {
+	// Name of the application
+	Name string `json:"name"`
+
+	// Version of the application
+	Description string `json:"description"`
+
+	// Authors
+	Authors []author `json:"authors"`
+
+	// Dependacies
+	Deps depVerMap `json:"packages"`
+}
 
 // Gapp entry point
 func main() {
+	twinkle.Twinkle()
+
 	// Get the current working directory
 	cwd, err := os.Getwd()
 
@@ -77,29 +130,36 @@ func main() {
 		panic(err)
 	}
 
+	fmt.Println(cwd)
+
+	// if !isGappProject(cwd) {
+	// 	fmt.Println("Is this supposed to be a gapp project? Use `gapp init` to make it a project")
+	// 	os.Exit(25)
+	// }
+
 	// Add currrent working directory to GOPATH
-	os.Setenv("GOPATH", fmt.Sprintf("%s:%s", cwd, os.Getenv("GOPATH")))
+	os.Setenv("GOPATH", fmt.Sprintf("%s/vendor:%s", cwd, os.Getenv("GOPATH")))
 
 	// println(os.Getenv("GOPATH"))
 
 	// Set up the CLI commands
-	app := cli.NewApp()
-	app.Name = "Gapp"
-	app.Usage = "Manage your Go project dependencies"
-	app.Version = "0.0.0"
-	app.Authors = []cli.Author{
+	client := cli.NewApp()
+	client.Name = "Gapp"
+	client.Usage = "Manage your Go application dependencies"
+	client.Version = "0.0.0"
+	client.Authors = []cli.Author{
 		{
 			Name:  "Merten van Gerven",
 			Email: "merten.vg@gmail.com",
 		},
 	}
-	app.Commands = []cli.Command{
+	client.Commands = []cli.Command{
 		{
 			Name:        "init",
 			Usage:       "Initialise the application",
 			Description: `Initialise the application with an gapp.json`,
 			Action: func(c *cli.Context) {
-				fmt.Println("init: ", c.Args())
+				initialize(c.Args())
 			},
 		},
 		{
@@ -184,11 +244,21 @@ ARGUMENTS: repository-url
 				cmd.Stdin = os.Stdin
 				cmd.Stderr = os.Stderr
 				cmd.Run()
-				//println("build: ", c.Args())
+			},
+		},
+		{
+			Name:  "goimports",
+			Usage: "Run goimports through gapp",
+			Action: func(c *cli.Context) {
+				cmd := exec.Command("goimports", c.Args()...)
+				cmd.Stdout = os.Stdout
+				cmd.Stdin = os.Stdin
+				cmd.Stderr = os.Stderr
+				cmd.Run()
 			},
 		},
 	}
 
 	// Run the client app
-	app.Run(os.Args)
+	client.Run(os.Args)
 }

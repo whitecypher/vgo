@@ -1,53 +1,73 @@
 # Gapp
-Go application dependency and build management simplified
+
+Go application dependency management simplified. Gapp wraps the default behaviour of the Go compiler and dependency resolver to ensure you have reproducable builds for your project. The intention is to be compatible with the default behaviour of the go get tool by setting up your $GOPATH with the additional needed paths for you project structure and running additional checks and version switches while dependencies are being resolved.
 
 # Build
+
 ```sh
-GOPATH=$(pwd):$GOPATH go install
+go install
 ```
 
 # API
 
-Clone a repository and symlink to GOPATH using package name from gapp.json
+Initialize an existing project.
+```sh
+gapp init
+```
 
-	gapp clone {git@github.com/whitecypher/gapp}
+Test your project and anything contained in your project src directory. Providing a package name will test only that package from either your project src directory, vendor/src directory, or your default $GOPATH, in this order.
+```sh
+gapp test [package/name]
+```
 
-Initialize an existing project with
+Test your project and all it's dependencies including your project src directory and vendor packages. Providing a package name will test only that package from either your project src directory, vendor/src directory, or your default $GOPATH, in this order.
+```sh
+gapp test-all [package/name]
+```
 
-	gapp init [package/name [version]]
+Add a dependency and version
+```sh
+gapp get [{packagename[github.com/codegangsta/cli]} [{version-compatibility[~1.4.1]}]
+```
 
-Bump the version number. Arguments can be on of "major", "minor", "patch"
+Update a dependency version. If the dependency doesn't exist update will perform a gapp get
+```sh
+gapp update [{packagename[github.com/codegangsta/cli]} [{version-compatibility[~1.4.1]}]
+```
 
-	gapp bump {major|minor|patch]
+Remove a dependency
+```sh
+gapp remove {packagename[github.com/codegangsta/cli]}
+```
 
-Add a package to the project
+Install the stored dependencies
+```sh
+gapp install
+```
 
-	gapp get [package/url]
-	gapp add {package/url}
+Run the application after installing dependencies
+```sh
+gapp run
+```
 
-Install project dependencies
+Run the tests after installing dependencies
+```sh
+gapp test
+```
 
-	gapp install
+Build the application after installing dependencies
+```sh
+gapp build
+```
 
-Update one or all installed packages to the latest compatible version
-
-	gapp update [package/url|package/name]
-
-Run the application
-
-	gapp run
-
-Build the application
-
-	gapp build
-
-Test project, or package with optional recursive flag to include subpackages in tests.
-Each package must be run independantly since coverage reports cannot natively be run on
-multipackage tests.
-
-	gapp test [-r] [package/name]
-	gapp test [--recursive] [package/name]
+Run a go command through gapp
+```sh
+gapp go
+```
 
 Unmatched actions should fall through to `go` command automatically
+```sh
+gapp ...
+```
 
-	gapp ...
+# Rationale
