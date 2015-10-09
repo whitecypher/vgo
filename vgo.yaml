@@ -1,7 +1,7 @@
 #
 # Project package import path
 #
-package: "github.com/whitecypher/vgo"
+package: github.com/whitecypher/vgo
 
 #
 # Packages imported by project
@@ -10,3 +10,6 @@ import:
   - package: github.com/go-yaml/yaml
   	version: v2
     ref:     53feefa2559fb8dfa8d81baad31be332c97d6c77
+  - package: github.com/Masterminds/vcs
+    version: 1.0.*
+    ref:     0660b4f62528913cc6fa33998ef6a6d8f480b359
