@@ -1,11 +1,10 @@
 ### Project ignores
 
-
-### Gapp ignores
-# When revision locking ignoore the vendor dir
-/vendor/
-# If vendoring then at least ignore vendor/src/app
-/vendor/src/app
+## vgo - Ignore vendored packages
+# You can optionally ignore the vendor directory. For true vendoring it is encouraged to add all needed source code to
+# to your own repository.
+# /vendor/
+/vendor/**/.git
 
 ### Sublime files
 *.sublime-project
@@ -23,15 +22,12 @@ _test
 ### Architecture specific extensions/prefixes
 *.[568vq]
 [568vq].out
-
 *.cgo1.go
 *.cgo2.c
 _cgo_defun.c
 _cgo_gotypes.go
 _cgo_export.*
-
 _testmain.go
-
 *.exe
 *.test
 *.prof
