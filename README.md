@@ -1,73 +1,38 @@
-# Gapp
+# vgo
 
-Go application dependency management simplified. Gapp wraps the default behaviour of the Go compiler and dependency resolver to ensure you have reproducable builds for your project. The intention is to be compatible with the default behaviour of the go get tool by setting up your $GOPATH with the additional needed paths for you project structure and running additional checks and version switches while dependencies are being resolved.
+Lightweight unassuming application vendoring for your go projects. Gapp decorates the default behaviour of the Go compiler and dependency resolver to ensure you have reproducable builds for your project. The intention is to be compatible with the default behaviour of the go get tool by setting up your project with a vendor directory containing all the dependencies of your project and storing the versions of each dependency so builds can reproduced.
+
+The only real requirement is that your GO15VENDOREXPERIMENT environment variable is set to 1
 
 # Build
 
 ```sh
-go install
+go get github.com/whitecypher/vgo
 ```
 
 # API
 
 Initialize an existing project.
 ```sh
-gapp init
+vgo init
 ```
 
-Test your project and anything contained in your project src directory. Providing a package name will test only that package from either your project src directory, vendor/src directory, or your default $GOPATH, in this order.
+Get a dependency compatible with the optionally specified version, tag, or commit. If the current installed version does not match the required compatibility it will be automatically updated. If the -u flag is provided it will update to the latest version matching the required compatibility regardless of the pinned compatible version.
 ```sh
-gapp test [package/name]
+vgo get [{packagename}[@{version-compatibility}]
 ```
-
-Test your project and all it's dependencies including your project src directory and vendor packages. Providing a package name will test only that package from either your project src directory, vendor/src directory, or your default $GOPATH, in this order.
-```sh
-gapp test-all [package/name]
-```
-
-Add a dependency and version
-```sh
-gapp get [{packagename[github.com/codegangsta/cli]} [{version-compatibility[~1.4.1]}]
-```
-
-Update a dependency version. If the dependency doesn't exist update will perform a gapp get
-```sh
-gapp update [{packagename[github.com/codegangsta/cli]} [{version-compatibility[~1.4.1]}]
-```
+e.g. `vgo get github.com/codegangsta/cli@~1.4.1`
 
 Remove a dependency
 ```sh
-gapp remove {packagename[github.com/codegangsta/cli]}
+vgo remove {packagename}
 ```
+e.g. `vgo remove github.com/codegangsta/cli`
 
-Install the stored dependencies
+Unmatched actions should fall through to `go` command automatically. This means that `vgo run` will automatically trigger `go run` with all the same rules and options available to you as the standard go commands.
 ```sh
-gapp install
-```
-
-Run the application after installing dependencies
-```sh
-gapp run
-```
-
-Run the tests after installing dependencies
-```sh
-gapp test
-```
-
-Build the application after installing dependencies
-```sh
-gapp build
-```
-
-Run a go command through gapp
-```sh
-gapp go
-```
-
-Unmatched actions should fall through to `go` command automatically
-```sh
-gapp ...
+vgo ...
 ```
 
 # Rationale
+Having tried other vendoring packages I've found they all require some odd work arounds or specific GOPATH configuration other than the configurations defined by golang itself.
