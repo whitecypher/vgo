@@ -55,7 +55,7 @@ IDEA: Include your vendor dir in your commits. This should prevent vendored repo
 vgo vend
 ```
 
-### Catchall
+#### Catchall
 Unmatched actions should fall through to `go` command automatically. This means that `vgo run` will automatically trigger `go run` with all the same rules and options available to you as the standard go commands.
 ```sh
 vgo ...
