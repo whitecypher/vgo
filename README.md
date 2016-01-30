@@ -1,38 +1,61 @@
-# vgo
+# VGO
 
-Lightweight unassuming application vendoring for your go projects. Gapp decorates the default behaviour of the Go compiler and dependency resolver to ensure you have reproducable builds for your project. The intention is to be compatible with the default behaviour of the go get tool by setting up your project with a vendor directory containing all the dependencies of your project and storing the versions of each dependency so builds can reproduced.
+Lightweight unassuming application vendoring for your go projects. VGO decorates the default behaviour of the Go command to ensure you have reproducable builds for your projects. The intention is to be compatible with the default behaviour of the go command line tools by setting up your project with a vendor directory containing all the dependencies of your project and storing the specific commit hashes of each dependency so builds can reproduced.
 
-The only real requirement is that your GO15VENDOREXPERIMENT environment variable is set to 1
+The only real requirement is that your GO15VENDOREXPERIMENT environment variable is set to 1. As of Go@1.6 this will be the default setting.
 
-# Build
+## Install
 
+You will need to have your $GOPATH/bin directory available in your $PATH.
 ```sh
-go get github.com/whitecypher/vgo
+go install github.com/whitecypher/vgo
 ```
 
-# API
+## Usage
 
-Initialize an existing project.
+Initialize an existing project with a manifest of all automatically resolved dependencies.
 ```sh
 vgo init
 ```
 
-Get a dependency compatible with the optionally specified version, tag, or commit. If the current installed version does not match the required compatibility it will be automatically updated. If the -u flag is provided it will update to the latest version matching the required compatibility regardless of the pinned compatible version.
+Get a dependency compatible with the optionally specified version, branch, tag, or commit. If the current installed version does not match the required reference it will be updated and the new reference stored in the dependency manifest.
 ```sh
-vgo get [{packagename}[@{version-compatibility}]
+vgo get ./...
+#or
+vgo get {packagename}[@{version}]
+#or
+vgo get {packagename}[@{branch}]
+#or
+vgo get {packagename}[@{tag}]
+#or
+vgo get {packagename}[@{commit}]
 ```
 e.g. `vgo get github.com/codegangsta/cli@~1.4.1`
 
 Remove a dependency
 ```sh
+vgo rm {packagename}
+#or
 vgo remove {packagename}
 ```
 e.g. `vgo remove github.com/codegangsta/cli`
+
+Clean your dependency tree. This automatically scans your application for dependencies and removes any unused vendors from your manifest and vendor directory. While doing this 
+```sh
+vgo clean
+```
+
+IDEA: Include your vendor dir in your commits. This should prevent vendored repositories from being added to you project as submodules so all source files will be committed along with your own application code.
+```sh
+vgo vend
+```
 
 Unmatched actions should fall through to `go` command automatically. This means that `vgo run` will automatically trigger `go run` with all the same rules and options available to you as the standard go commands.
 ```sh
 vgo ...
 ```
 
-# Rationale
-Having tried other vendoring packages I've found they all require some odd work arounds or specific GOPATH configuration other than the configurations defined by golang itself.
+## Mindset
+~ easy to use in an idiomatic go manner
+~ resolve the dependency diamond problem
+~ flexible to allow multiple (if not all) use cases
