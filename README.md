@@ -13,11 +13,13 @@ go install github.com/whitecypher/vgo
 
 ## Usage
 
+#### Init
 Initialize an existing project with a manifest of all automatically resolved dependencies.
 ```sh
 vgo init
 ```
 
+#### Get
 Get a dependency compatible with the optionally specified version, branch, tag, or commit. If the current installed version does not match the required reference it will be updated and the new reference stored in the dependency manifest.
 ```sh
 vgo get ./...
@@ -32,6 +34,7 @@ vgo get {packagename}[@{commit}]
 ```
 e.g. `vgo get github.com/codegangsta/cli@~1.4.1`
 
+#### Remove
 Remove a dependency
 ```sh
 vgo rm {packagename}
@@ -40,22 +43,25 @@ vgo remove {packagename}
 ```
 e.g. `vgo remove github.com/codegangsta/cli`
 
+#### Clean
 Clean your dependency tree. This automatically scans your application for dependencies and removes any unused vendors from your manifest and vendor directory. While doing this 
 ```sh
 vgo clean
 ```
 
+#### Vendor
 IDEA: Include your vendor dir in your commits. This should prevent vendored repositories from being added to you project as submodules so all source files will be committed along with your own application code.
 ```sh
 vgo vend
 ```
 
+### Catchall
 Unmatched actions should fall through to `go` command automatically. This means that `vgo run` will automatically trigger `go run` with all the same rules and options available to you as the standard go commands.
 ```sh
 vgo ...
 ```
 
 ## Mindset
-~ easy to use in an idiomatic go manner
-~ resolve the dependency diamond problem
-~ flexible to allow multiple (if not all) use cases
+* easy to use in an idiomatic go manner
+* resolve the dependency diamond problem
+* flexible to allow multiple (if not all) use cases
