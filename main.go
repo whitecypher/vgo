@@ -1,41 +1,3 @@
-// Gapp - Go Application Tool2
-//
-//  # Initialize an existing project with
-//  gapp init
-//
-//  # Test project, or package with optional recursive flag to include subpackages in tests.
-//  # Optional deps flag may also be added to also include tests for dependencies.
-//  # Each package must be run independantly since coverage reports cannot natively be run on
-//  # multipackage tests.
-//  gapp test [--recursive (-r)] [--deps (-d)] [package/name]
-//
-//	# Add a dependency and version
-// 	gapp get [{packagename[github.com/codegangsta/cli]} [{tag|branch|commit-hash|version-compatibility[~1.4.1]}]
-//
-//  # Update a dependency
-//  gapp update [{packagename[github.com/codegangsta/cli]} [{tag|branch|commit-hash|version-compatibility[~1.4.1]}]
-//
-//  # Remove a dependency
-//  gapp remove {packagename[github.com/codegangsta/cli]}
-//
-//	# Install the stored dependencies
-//	gapp install
-//
-// 	# Run the application after installing dependencies
-// 	gapp run
-//
-// 	# Run the tests after installing dependencies
-//  gapp test
-//
-// 	# Build the application after installing dependencies
-//  gapp build
-//
-//  # Run a go command through gapp
-//  gapp go
-//
-//  # Unmatched actions should fall through to `go` command automatically
-//  gapp ...
-//
 package main
 
 import (
@@ -44,6 +6,7 @@ import (
 	"os/exec"
 
 	"github.com/codegangsta/cli"
+	"github.com/whitecypher/vgo/lib/twinkle"
 )
 
 const (
@@ -168,7 +131,7 @@ func main() {
 			Description: `Retrieve a package (or all added packages) from remote repositories.
 
    If a repository-url is provided it will be added to the dependencies listed in gapp.json and
-   retrieved into your projects 'src' directory. When a version is given, only tags matching the 
+   retrieved into your projects 'src' directory. When a version is given, only tags matching the
    version requirements will be retrieved.
 
 ARGUMENTS: [repository-url [version]]
@@ -185,7 +148,7 @@ ARGUMENTS: [repository-url [version]]
 
    If a repository-url is provided and exists within the dependencies list it will updated to the
    latest compatible version. If not found within the dependencies list it be added in gapp.json and
-   retrieved into your projects 'src' directory. When a version is given, gapp.json will be updated 
+   retrieved into your projects 'src' directory. When a version is given, gapp.json will be updated
    and only tags matching the version requirements will be retrieved.
 
 ARGUMENTS: [repository-url [version]]
