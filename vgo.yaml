@@ -1,8 +1,6 @@
-
 package: github.com/whitecypher/vgo
-import:
-  - package: github.com/go-yaml/yaml:v2
-    ref: 53feefa2559fb8dfa8d81baad31be332c97d6c77
-    import:
-     - package: 
-  - github.com/Masterminds/vcs:1.0.*:0660b4f62528913cc6fa33998ef6a6d8f480b359
+imports:
+  - package: github.com/go-yaml/yaml
+    compat: 2.*
+  - package: github.com/Masterminds/vcs
+    compat: 1.0.*
