@@ -2,25 +2,29 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v2"
 
 	"github.com/codegangsta/cli"
+	"github.com/whitecypher/vgo/lib/native"
 )
 
+// Pkg ...
 type Pkg struct {
-	Name   string `yaml:"package"`
-	Compat Compat `yaml:"compat"`
-	Ref    string `yaml:"ref"`
-	Deps   []Pkg  `yaml:"imports"`
+	Name   string `yaml:"package,omitempty"`
+	Compat Compat `yaml:"compat,omitempty"`
+	Ref    string `yaml:"ref,omitempty"`
+	Deps   []*Pkg `yaml:"imports,omitempty"`
 }
 
-// version compatibily string e.g. "~1.0.0" or "1.*"
+// Compat version compatibility string e.g. "~1.0.0" or "1.*"
 type Compat string
 
 // DepVerMap contains a mapping of dependency urls to version compatibility strings
@@ -70,11 +74,11 @@ func main() {
 			Description: `Detect imports and initialise the application with a vgo.yaml`,
 			Action: func(c *cli.Context) {
 				manifestPath := filepath.Join(cwd, "vgo.yaml")
-				_, err := os.Stat(manifestPath)
-				if err != nil {
-					fmt.Println(err.Error())
-					os.Exit(1)
-				}
+				// _, err := os.Stat(manifestPath)
+				// if err != nil {
+				// 	fmt.Println(err.Error())
+				// 	os.Exit(1)
+				// }
 				p := &Pkg{}
 				p.Load(manifestPath)
 				p.ResolveImports(".")
@@ -147,11 +151,63 @@ func (p *Pkg) Save(path string) error {
 
 // ResolveImports ...
 func (p *Pkg) ResolveImports(name string) error {
+	fmt.Println(name)
+
 	b := &bytes.Buffer{}
 	cmd := exec.Command("go", "list", "-json", name)
 	cmd.Stdout = b
 	cmd.Run()
 
-	fmt.Println(b.String())
+	l := &List{}
+	err := json.Unmarshal(b.Bytes(), l)
+	if err != nil {
+		return err
+	}
+
+	ignoreMap := map[string]bool{}
+	for _, name := range native.Packages() {
+		ignoreMap[name] = true
+	}
+
+	for _, name := range l.Deps {
+		// Skip native packages
+		if _, ok := ignoreMap[name]; ok {
+			continue
+		}
+		// Skip subpackages
+		basePath := resolveBaseName(l.Importpath)
+		if strings.HasPrefix(name, basePath) {
+			p.ResolveImports(name)
+			continue
+		}
+		// Skip packages already in manifest
+		name := resolveBaseName(name)
+		if p.HasImport(name) {
+			p.ResolveImports(name)
+			continue
+		}
+
+		dep := &Pkg{Name: name}
+		dep.ResolveImports(name)
+		p.Deps = append(p.Deps, dep)
+	}
 	return nil
+}
+
+// HasImport ...
+func (p *Pkg) HasImport(name string) bool {
+	for _, i := range p.Deps {
+		if name == i.Name {
+			return true
+		}
+	}
+	return false
+}
+
+func resolveBaseName(name string) string {
+	parts := strings.Split(name, "/")
+	if len(parts) > 3 {
+		parts = parts[0:3]
+	}
+	return strings.Join(parts, "/")
 }
