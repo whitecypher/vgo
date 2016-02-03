@@ -22,6 +22,8 @@ type Pkg struct {
 	Compat Compat `yaml:"compat,omitempty"`
 	Ref    string `yaml:"ref,omitempty"`
 	Deps   []*Pkg `yaml:"imports,omitempty"`
+	Bin    string `yaml:"cvs,omitempty"`
+	URL    string `yaml:"url,omitempty"`
 }
 
 // Load ...
@@ -92,6 +94,29 @@ func (p *Pkg) ResolveImports() error {
 		p.Deps = append(p.Deps, dep)
 	}
 	return nil
+}
+
+// Install the package
+func (p *Pkg) Install() error {
+	return nil
+}
+
+// ResolveCVS resolves the CVS properties (Bin, URL) for the package
+func (p *Pkg) ResolveCVS() (bin, url string) {
+	if len(p.Bin) == 0 {
+		service := strings.Split(p.Name, "/")[0]
+		switch service {
+		case "github.com":
+			repo := strings.TrimPrefix(p.Name, "github.com/")
+			p.Bin = fmt.Sprintf("git@github.com:%s.git", repo)
+		}
+	}
+
+	if len(url) == 0 {
+
+	}
+
+	return p.Bin, p.URL
 }
 
 // HasImport ...
