@@ -1,10 +1,7 @@
 ### Project ignores
 
 ## vgo - Ignore vendored packages
-# You can optionally ignore the vendor directory. For true vendoring it is encouraged to add all needed source code to
-# to your own repository.
-# /vendor/
-/vendor/**/.git
+/vendor/
 
 ### Sublime files
 *.sublime-project

@@ -3,16 +3,19 @@ package main
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/codegangsta/cli"
 )
 
 var (
-	tasks    chan Task
-	done     chan bool
-	packages map[string]Pkg
+	packages    = map[string]*Pkg{}
+	packageLock = &sync.RWMutex{}
+	installPath = os.Getenv("GOPATH")
+	cwd         = MustGetwd(os.Getwd())
 )
 
 // List structure from go list -json .
@@ -27,19 +30,22 @@ type List struct {
 	Deps       []string `json:"Deps"`
 }
 
-// Gapp entry point
-func main() {
-	// Get the current working directory
-	cwd, err := os.Getwd()
+// MustGetwd handles the error returned by Getwd or returns the returns the resulting current working directory path.
+func MustGetwd(cwd string, err error) string {
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)
 	}
+	return cwd
+}
 
-	fmt.Println(cwd)
+// Gapp entry point
+func main() {
+	if os.Getenv("GO15VENDOREXPERIMENT") == "1" {
+		installPath = path.Join(cwd, "vendor")
+	}
 
-	tasks = make(chan Task, 100)
-	done = make(chan bool)
+	fmt.Println(installPath)
 
 	client := cli.NewApp()
 	client.Name = "vgo"
@@ -53,27 +59,9 @@ func main() {
 	}
 	client.Commands = []cli.Command{
 		{
-			Name:        "init",
-			Usage:       "Initialize project",
-			Description: `Detect imports and initialise the application with a vgo.yaml`,
-			Action: func(c *cli.Context) {
-				manifestPath := filepath.Join(cwd, "vgo.yaml")
-				// _, err := os.Stat(manifestPath)
-				// if err != nil {
-				// 	fmt.Println(err.Error())
-				// 	os.Exit(1)
-				// }
-				p := &Pkg{}
-				p.Load(manifestPath)
-				p.ResolveImports()
-				fmt.Printf("%+v\n", p)
-				p.Save(manifestPath)
-			},
-		},
-		{
 			Name:        "get",
 			Usage:       "Get packages(s)",
-			Description: `Get a package (or all added packages) compatible with the provided version.`,
+			Description: `Get a specified package (or all specified packages) compatible with the provided version.`,
 			Action: func(c *cli.Context) {
 				fmt.Println("get: ", c.Args())
 			},
@@ -98,6 +86,11 @@ func main() {
 		},
 	}
 	client.Action = func(c *cli.Context) {
+		args := c.Args()
+		if len(args) == 0 {
+			handleDefault(c)
+			return
+		}
 		fmt.Println("Catchall: ", c.Args())
 	}
 
@@ -110,10 +103,36 @@ func main() {
 	client.Run(os.Args)
 }
 
+func handleDefault(c *cli.Context) {
+	manifestPath := filepath.Join(cwd, "vgo.yaml")
+	p := &Pkg{}
+
+	p.Load(manifestPath)
+
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	go p.ResolveImports(wg)
+	wg.Wait()
+
+	p.Save(manifestPath)
+
+	fmt.Printf("%+v\n", p)
+}
+
 func resolveBaseName(name string) string {
 	parts := strings.Split(name, "/")
 	if len(parts) > 3 {
 		parts = parts[0:3]
 	}
 	return strings.Join(parts, "/")
+}
+
+func addToPackagesMap(p *Pkg) {
+	packageLock.Lock()
+	packages[resolveBaseName(p.Name)] = p
+	packageLock.Unlock()
+
+	for _, sp := range p.Deps {
+		addToPackagesMap(sp)
+	}
 }

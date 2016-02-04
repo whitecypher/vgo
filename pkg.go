@@ -7,7 +7,9 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"path"
 	"strings"
+	"sync"
 
 	"github.com/whitecypher/vgo/lib/native"
 	"gopkg.in/yaml.v2"
@@ -18,6 +20,8 @@ type Compat string
 
 // Pkg ...
 type Pkg struct {
+	sync.Mutex `yaml:"-"`
+
 	Name   string `yaml:"package,omitempty"`
 	Compat Compat `yaml:"compat,omitempty"`
 	Ref    string `yaml:"ref,omitempty"`
@@ -50,11 +54,17 @@ func (p *Pkg) Save(path string) error {
 }
 
 // ResolveImports ...
-func (p *Pkg) ResolveImports() error {
+func (p *Pkg) ResolveImports(wg *sync.WaitGroup) error {
+	defer wg.Done()
+
 	name := p.Name
 	if len(name) == 0 {
 		name = "."
 	}
+
+	p.Install()
+	p.Checkout()
+
 	fmt.Println(name)
 
 	b := &bytes.Buffer{}
@@ -78,53 +88,116 @@ func (p *Pkg) ResolveImports() error {
 		if _, ok := ignoreMap[name]; ok {
 			continue
 		}
+
 		// Skip subpackages
 		basePath := resolveBaseName(l.Importpath)
 		if strings.HasPrefix(name, basePath) {
 			continue
 		}
+
 		// Skip packages already in manifest
 		name := resolveBaseName(name)
-		if p.HasImport(name) {
+		packageLock.RLock()
+		sp, ok := packages[name]
+		packageLock.RUnlock()
+		if ok {
+			wg.Add(1)
+			go sp.ResolveImports(wg)
 			continue
 		}
 
-		dep := &Pkg{Name: name}
-		dep.ResolveImports()
+		dep := &Pkg{Name: name, Compat: Compat("master")}
+		addToPackagesMap(dep)
+		wg.Add(1)
+		go dep.ResolveImports(wg)
+		p.Lock()
 		p.Deps = append(p.Deps, dep)
+		p.Unlock()
 	}
 	return nil
 }
 
 // Install the package
 func (p *Pkg) Install() error {
+	if p.Name == "." {
+		return nil
+	}
+
+	p.Lock()
+	defer p.Unlock()
+
+	p.ResolveCVS()
+
+	dir := path.Join(installPath, p.Name)
+	_, err := os.Stat(dir)
+	if os.IsNotExist(err) {
+		fmt.Println("Install", dir)
+
+		cmd := exec.Command(p.Bin, "clone", p.URL, dir)
+		cmd.Dir = installPath
+		// cmd.Stdout = os.Stdout
+		// cmd.Stderr = os.Stdout
+		err := cmd.Run()
+		if err != nil {
+			return err
+		}
+	} else {
+		return err
+	}
+
+	return nil
+}
+
+// Checkout switches the package version to the commit nearest maching the Compat string
+func (p *Pkg) Checkout() error {
+	if p.Name == "." {
+		return nil
+	}
+
+	p.Lock()
+	defer p.Unlock()
+
+	p.ResolveCVS()
+
+	dir := path.Join(installPath, p.Name)
+	fi, err := os.Stat(dir)
+	if err != nil {
+		return err
+	}
+
+	if fi.IsDir() {
+		fmt.Println("Checkout", dir)
+
+		cmd := exec.Command(p.Bin, "checkout", "-f", string(p.Compat))
+		cmd.Dir = dir
+		err := cmd.Run()
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
 // ResolveCVS resolves the CVS properties (Bin, URL) for the package
 func (p *Pkg) ResolveCVS() (bin, url string) {
+	parts := strings.Split(p.Name, "/")
+	service := parts[0]
+	repo := strings.Join(parts[1:], "/")
+
 	if len(p.Bin) == 0 {
-		service := strings.Split(p.Name, "/")[0]
 		switch service {
 		case "github.com":
-			repo := strings.TrimPrefix(p.Name, "github.com/")
-			p.Bin = fmt.Sprintf("git@github.com:%s.git", repo)
+			p.Bin = "git"
 		}
 	}
 
 	if len(url) == 0 {
-
+		switch service {
+		case "github.com":
+			p.URL = fmt.Sprintf("git@github.com:%s.git", repo)
+		}
 	}
 
 	return p.Bin, p.URL
-}
-
-// HasImport ...
-func (p *Pkg) HasImport(name string) bool {
-	for _, i := range p.Deps {
-		if name == i.Name {
-			return true
-		}
-	}
-	return false
 }
