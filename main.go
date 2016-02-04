@@ -115,8 +115,6 @@ func handleDefault(c *cli.Context) {
 	wg.Wait()
 
 	p.Save(manifestPath)
-
-	fmt.Printf("%+v\n", p)
 }
 
 func resolveBaseName(name string) string {
@@ -135,4 +133,8 @@ func addToPackagesMap(p *Pkg) {
 	for _, sp := range p.Deps {
 		addToPackagesMap(sp)
 	}
+
+	packageLock.RLock()
+	fmt.Printf("%+v\n----\n", packages)
+	packageLock.RUnlock()
 }

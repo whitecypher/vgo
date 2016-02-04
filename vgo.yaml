@@ -1,6 +1,6 @@
 imports:
 - package: github.com/codegangsta/cli
-  compat: master
+  compat: v1.2.0
   cvs: git
   url: git@github.com:codegangsta/cli.git
 - package: gopkg.in/yaml.v2

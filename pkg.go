@@ -37,6 +37,7 @@ func (p *Pkg) Load(path string) error {
 		return err
 	}
 	yaml.Unmarshal(data, p)
+	addToPackagesMap(p)
 	return nil
 }
 
@@ -58,7 +59,7 @@ func (p *Pkg) ResolveImports(wg *sync.WaitGroup) error {
 	defer wg.Done()
 
 	name := p.Name
-	if len(name) == 0 {
+	if len(name) == 0 || strings.HasSuffix(cwd, p.Name) {
 		name = "."
 	}
 
@@ -119,7 +120,7 @@ func (p *Pkg) ResolveImports(wg *sync.WaitGroup) error {
 
 // Install the package
 func (p *Pkg) Install() error {
-	if p.Name == "." {
+	if p.Name == "." || strings.HasSuffix(cwd, p.Name) {
 		return nil
 	}
 
@@ -128,13 +129,13 @@ func (p *Pkg) Install() error {
 
 	p.ResolveCVS()
 
-	dir := path.Join(installPath, p.Name)
+	dir := path.Join(installPath, resolveBaseName(p.Name))
 	_, err := os.Stat(dir)
 	if os.IsNotExist(err) {
 		fmt.Println("Install", dir)
 
 		cmd := exec.Command(p.Bin, "clone", p.URL, dir)
-		cmd.Dir = installPath
+		// cmd.Dir = installPath
 		// cmd.Stdout = os.Stdout
 		// cmd.Stderr = os.Stdout
 		err := cmd.Run()
@@ -150,7 +151,7 @@ func (p *Pkg) Install() error {
 
 // Checkout switches the package version to the commit nearest maching the Compat string
 func (p *Pkg) Checkout() error {
-	if p.Name == "." {
+	if p.Name == "." || strings.HasSuffix(cwd, p.Name) {
 		return nil
 	}
 
@@ -159,7 +160,7 @@ func (p *Pkg) Checkout() error {
 
 	p.ResolveCVS()
 
-	dir := path.Join(installPath, p.Name)
+	dir := path.Join(installPath, resolveBaseName(p.Name))
 	fi, err := os.Stat(dir)
 	if err != nil {
 		return err
