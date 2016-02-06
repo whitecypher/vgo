@@ -6,7 +6,7 @@ VGO
 
 Lightweight unassuming application vendoring for your go projects. VGO decorates the default behaviour of the Go command to ensure you have reproducable builds for your projects. The intention is to be compatible with the default behaviour of the go command line tools by setting up your project with a vendor directory containing all the dependencies of your project and storing the specific commit hashes of each dependency so builds can reproduced.
 
-The only real requirement is that your GO15VENDOREXPERIMENT environment variable is set to 1. As of Go@1.6 this will be the default setting.
+The only real requirement is that your GO15VENDOREXPERIMENT environment variable is set to 1. As of Go#1.6 this will be the default setting.
 
 Install
 -------
@@ -35,16 +35,16 @@ Get a dependency compatible with the optionally specified version, branch, tag, 
 ```sh
 vgo get ./...
 #or
-vgo get {packagename}[@{version}]
+vgo get {packagename}[#{version}]
 #or
-vgo get {packagename}[@{branch}]
+vgo get {packagename}[#{branch}]
 #or
-vgo get {packagename}[@{tag}]
+vgo get {packagename}[#{tag}]
 #or
-vgo get {packagename}[@{commit}]
+vgo get {packagename}[#{commit}]
 ```
 
-e.g. `vgo get github.com/codegangsta/cli@~1.4.1`
+e.g. `vgo get github.com/codegangsta/cli#~1.4.1`
 
 #### Remove
 

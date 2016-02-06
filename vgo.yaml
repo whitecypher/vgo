@@ -1,7 +1,9 @@
-imports:
-- package: github.com/codegangsta/cli
-  compat: v1.2.0
-  cvs: git
-  url: git@github.com:codegangsta/cli.git
-- package: gopkg.in/yaml.v2
-  compat: master
+deps:
+- pkg: github.com/codegangsta/cli
+  ver: v1.2.0
+  ref: 565493f259bf868adb54d45d5f4c68d405117adf
+- pkg: gopkg.in/yaml.v2
+  ver: master
+  ref: f7716cbe52baa25d2e9b0d0da546fcf909fc16b4
+- pkg: github.com/Masterminds/vcs
+  ref: 4e0f9d754b04dbb4fc9a62aa5ef6bf22ee0937a8

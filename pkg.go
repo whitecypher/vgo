@@ -8,26 +8,39 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"strings"
 	"sync"
 
-	"github.com/whitecypher/vgo/lib/native"
+	"github.com/Masterminds/vcs"
 	"gopkg.in/yaml.v2"
 )
 
-// Compat version compatibility string e.g. "~1.0.0" or "1.*"
-type Compat string
+// Version compatibility string e.g. "~1.0.0" or "1.*"
+type Version string
+
+// List structure from go list -json .
+type List struct {
+	Dir        string   `json:"Dir"`
+	Importpath string   `json:"ImportPath"`
+	Name       string   `json:"Name"`
+	Target     string   `json:"Target"`
+	Root       string   `json:"Root"`
+	Gofiles    []string `json:"GoFiles"`
+	Imports    []string `json:"Imports"`
+	Deps       []string `json:"Deps"`
+}
 
 // Pkg ...
 type Pkg struct {
 	sync.Mutex `yaml:"-"`
 
-	Name   string `yaml:"package,omitempty"`
-	Compat Compat `yaml:"compat,omitempty"`
-	Ref    string `yaml:"ref,omitempty"`
-	Deps   []*Pkg `yaml:"imports,omitempty"`
-	Bin    string `yaml:"cvs,omitempty"`
-	URL    string `yaml:"url,omitempty"`
+	repo         vcs.Repo `yaml:"-"`
+	Name         string   `yaml:"pkg,omitempty"`
+	Version      Version  `yaml:"ver,omitempty"`
+	Reference    string   `yaml:"ref,omitempty"`
+	Dependencies []*Pkg   `yaml:"deps,omitempty"`
+	URL          string   `yaml:"url,omitempty"`
 }
 
 // Load ...
@@ -55,7 +68,7 @@ func (p *Pkg) Save(path string) error {
 }
 
 // ResolveImports ...
-func (p *Pkg) ResolveImports(wg *sync.WaitGroup) error {
+func (p *Pkg) ResolveImports(wg *sync.WaitGroup, install bool) error {
 	defer wg.Done()
 
 	name := p.Name
@@ -63,56 +76,63 @@ func (p *Pkg) ResolveImports(wg *sync.WaitGroup) error {
 		name = "."
 	}
 
-	p.Install()
-	p.Checkout()
-
-	fmt.Println(name)
+	if install {
+		err := p.Install()
+		if err != nil {
+			fmt.Println(err)
+		} else {
+			err := p.Checkout()
+			if err != nil {
+				fmt.Println(err)
+			}
+		}
+	}
 
 	b := &bytes.Buffer{}
 	cmd := exec.Command("go", "list", "-json", name)
 	cmd.Stdout = b
 	cmd.Run()
-
 	l := &List{}
 	err := json.Unmarshal(b.Bytes(), l)
 	if err != nil {
 		return err
 	}
 
-	ignoreMap := map[string]bool{}
-	for _, name := range native.Packages() {
-		ignoreMap[name] = true
-	}
-
-	for _, name := range l.Deps {
-		// Skip native packages
-		if _, ok := ignoreMap[name]; ok {
-			continue
+	var deps []string
+	deps = append(deps, resolveDeps(name)...)
+	fmt.Println(deps)
+	os.Exit(1)
+	for _, name := range deps {
+		basePath := repoName(l.Importpath)
+		vendorPath := filepath.Join(basePath, "vendor")
+		if strings.HasPrefix(name, vendorPath) {
+			name = strings.Trim(strings.TrimPrefix(name, vendorPath), "/")
 		}
 
 		// Skip subpackages
-		basePath := resolveBaseName(l.Importpath)
 		if strings.HasPrefix(name, basePath) {
+			// fmt.Printf("Skipping subpackage %s of %s\n", name, basePath)
 			continue
 		}
 
 		// Skip packages already in manifest
-		name := resolveBaseName(name)
+		name := repoName(name)
 		packageLock.RLock()
 		sp, ok := packages[name]
 		packageLock.RUnlock()
 		if ok {
+			// fmt.Printf("Package %s already vendored\n", name)
 			wg.Add(1)
-			go sp.ResolveImports(wg)
+			go sp.ResolveImports(wg, install)
 			continue
 		}
 
-		dep := &Pkg{Name: name, Compat: Compat("master")}
+		dep := &Pkg{Name: name}
 		addToPackagesMap(dep)
 		wg.Add(1)
-		go dep.ResolveImports(wg)
+		go dep.ResolveImports(wg, install)
 		p.Lock()
-		p.Deps = append(p.Deps, dep)
+		p.Dependencies = append(p.Dependencies, dep)
 		p.Unlock()
 	}
 	return nil
@@ -120,85 +140,136 @@ func (p *Pkg) ResolveImports(wg *sync.WaitGroup) error {
 
 // Install the package
 func (p *Pkg) Install() error {
+	// don't touch the current working directory
 	if p.Name == "." || strings.HasSuffix(cwd, p.Name) {
 		return nil
 	}
-
 	p.Lock()
 	defer p.Unlock()
-
-	p.ResolveCVS()
-
-	dir := path.Join(installPath, resolveBaseName(p.Name))
-	_, err := os.Stat(dir)
-	if os.IsNotExist(err) {
-		fmt.Println("Install", dir)
-
-		cmd := exec.Command(p.Bin, "clone", p.URL, dir)
-		// cmd.Dir = installPath
-		// cmd.Stdout = os.Stdout
-		// cmd.Stderr = os.Stdout
-		err := cmd.Run()
+	repo, err := p.VCS()
+	if err != nil {
+		return err
+	}
+	if !repo.CheckLocal() {
+		err = repo.Get()
 		if err != nil {
 			return err
 		}
-	} else {
-		return err
 	}
+	p.Reference, err = repo.Version()
+	return err
+}
 
-	return nil
+// RepoPath path to the package
+func (p Pkg) RepoPath() string {
+	return path.Join(installPath, p.Name)
 }
 
 // Checkout switches the package version to the commit nearest maching the Compat string
 func (p *Pkg) Checkout() error {
+	// don't touch the current working directory
 	if p.Name == "." || strings.HasSuffix(cwd, p.Name) {
 		return nil
 	}
-
 	p.Lock()
 	defer p.Unlock()
-
-	p.ResolveCVS()
-
-	dir := path.Join(installPath, resolveBaseName(p.Name))
-	fi, err := os.Stat(dir)
+	repo, err := p.VCS()
 	if err != nil {
 		return err
 	}
-
-	if fi.IsDir() {
-		fmt.Println("Checkout", dir)
-
-		cmd := exec.Command(p.Bin, "checkout", "-f", string(p.Compat))
-		cmd.Dir = dir
-		err := cmd.Run()
-		if err != nil {
-			return err
-		}
+	version := p.Version
+	if p.Reference != "" {
+		version = Version(p.Reference)
 	}
-
-	return nil
+	err = repo.UpdateVersion(string(version))
+	if err != nil {
+		return err
+	}
+	p.Reference, err = repo.Version()
+	return err
 }
 
-// ResolveCVS resolves the CVS properties (Bin, URL) for the package
-func (p *Pkg) ResolveCVS() (bin, url string) {
+// VCS resolves the vcs.Repo for the Pkg
+func (p *Pkg) VCS() (repo vcs.Repo, err error) {
+	if p.repo != nil {
+		repo = p.repo
+		return
+	}
+	repoType := p.RepoType()
+	repoURL := p.RepoURL()
+	repoPath := p.RepoPath()
+	switch repoType {
+	case vcs.Git:
+		repo, err = vcs.NewGitRepo(repoURL, repoPath)
+	case vcs.Bzr:
+		repo, err = vcs.NewBzrRepo(repoURL, repoPath)
+	case vcs.Hg:
+		repo, err = vcs.NewHgRepo(repoURL, repoPath)
+	case vcs.Svn:
+		repo, err = vcs.NewSvnRepo(repoURL, repoPath)
+	}
+	p.repo = repo
+	return
+}
+
+// RepoURL creates the repo url from the package import path
+func (p *Pkg) RepoURL() string {
+	if p.URL != "" {
+		return p.URL
+	}
+	// If it's already installed in vendor or gopath, grab the url from there
+	repo := repoFromPath(p.RepoPath(), filepath.Join(gopath, "src", p.Name))
+	if repo != nil {
+		return repo.Remote()
+	}
+	// Fallback to resolving the path from the package import path
+	// Add more cases as needed/requested
 	parts := strings.Split(p.Name, "/")
-	service := parts[0]
-	repo := strings.Join(parts[1:], "/")
-
-	if len(p.Bin) == 0 {
-		switch service {
-		case "github.com":
-			p.Bin = "git"
-		}
+	switch parts[0] {
+	case "github.com":
+		return fmt.Sprintf("git@github.com:%s.git", strings.Join(parts[1:2], "/"))
 	}
+	return ""
+}
 
-	if len(url) == 0 {
-		switch service {
-		case "github.com":
-			p.URL = fmt.Sprintf("git@github.com:%s.git", repo)
-		}
+// RepoType attempts to resolve the repository type of the package by it's name
+func (p Pkg) RepoType() vcs.Type {
+	// If it's already installed in vendor or gopath, grab the type from there
+	repo := repoFromPath(p.RepoPath(), filepath.Join(gopath, "src", p.Name))
+	if repo != nil {
+		return repo.Vcs()
 	}
+	// Fallback to resolving the type from the package import path
+	// Add more cases as needed/requested
+	parts := strings.Split(p.Name, "/")
+	switch parts[0] {
+	case "github.com":
+		return vcs.Git
+	}
+	return vcs.NoVCS
+}
 
-	return p.Bin, p.URL
+func repoFromPath(paths ...string) vcs.Repo {
+	for _, path := range paths {
+		repoType, err := vcs.DetectVcsFromFS(path)
+		if err != nil {
+			continue
+		}
+		var repo vcs.Repo
+		switch repoType {
+		case vcs.Git:
+			repo, err = vcs.NewGitRepo("", path)
+		case vcs.Bzr:
+			repo, err = vcs.NewBzrRepo("", path)
+		case vcs.Hg:
+			repo, err = vcs.NewHgRepo("", path)
+		case vcs.Svn:
+			repo, err = vcs.NewSvnRepo("", path)
+		}
+		if err != nil {
+			continue
+		}
+		return repo
+	}
+	return nil
 }
