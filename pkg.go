@@ -1,12 +1,9 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"strings"
@@ -35,12 +32,14 @@ type List struct {
 type Pkg struct {
 	sync.Mutex `yaml:"-"`
 
-	repo         vcs.Repo `yaml:"-"`
-	Name         string   `yaml:"pkg,omitempty"`
-	Version      Version  `yaml:"ver,omitempty"`
-	Reference    string   `yaml:"ref,omitempty"`
-	Dependencies []*Pkg   `yaml:"deps,omitempty"`
-	URL          string   `yaml:"url,omitempty"`
+	repo   vcs.Repo `yaml:"-"`
+	parent *Pkg     `yaml:"-"`
+
+	Name         string  `yaml:"pkg,omitempty"`
+	Version      Version `yaml:"ver,omitempty"`
+	Reference    string  `yaml:"ref,omitempty"`
+	Dependencies []*Pkg  `yaml:"deps,omitempty"`
+	URL          string  `yaml:"url,omitempty"`
 }
 
 // Load ...
@@ -49,8 +48,32 @@ func (p *Pkg) Load(path string) error {
 	if err != nil {
 		return err
 	}
-	yaml.Unmarshal(data, p)
-	addToPackagesMap(p)
+	err = yaml.Unmarshal(data, p)
+	if err != nil {
+		return err
+	}
+	p.updateDepsParents()
+	return nil
+}
+
+// updateDepsParents resolves the parent (caller) pkg for all dependencies recursively
+func (p *Pkg) updateDepsParents() {
+	for _, d := range p.Dependencies {
+		d.parent = p
+		d.updateDepsParents()
+	}
+}
+
+// Find looks for a package in it's dependencies or parents dependencies recursively
+func (p *Pkg) Find(name string) *Pkg {
+	for _, d := range p.Dependencies {
+		if d.Name == name {
+			return d
+		}
+	}
+	if p.parent != nil {
+		return p.parent.Find(name)
+	}
 	return nil
 }
 
@@ -88,40 +111,16 @@ func (p *Pkg) ResolveImports(wg *sync.WaitGroup, install bool) error {
 		}
 	}
 
-	b := &bytes.Buffer{}
-	cmd := exec.Command("go", "list", "-json", name)
-	cmd.Stdout = b
-	cmd.Run()
-	l := &List{}
-	err := json.Unmarshal(b.Bytes(), l)
-	if err != nil {
-		return err
-	}
-
 	var deps []string
-	deps = append(deps, resolveDeps(name)...)
-	fmt.Println(deps)
-	os.Exit(1)
+	deps = append(deps, resolveDeps(name, getDepsFromPackage)...)
 	for _, name := range deps {
-		basePath := repoName(l.Importpath)
-		vendorPath := filepath.Join(basePath, "vendor")
-		if strings.HasPrefix(name, vendorPath) {
-			name = strings.Trim(strings.TrimPrefix(name, vendorPath), "/")
-		}
-
-		// Skip subpackages
-		if strings.HasPrefix(name, basePath) {
-			// fmt.Printf("Skipping subpackage %s of %s\n", name, basePath)
-			continue
-		}
-
 		// Skip packages already in manifest
 		name := repoName(name)
 		packageLock.RLock()
+		// replace packages list in favor of p.Parent with search method
 		sp, ok := packages[name]
 		packageLock.RUnlock()
 		if ok {
-			// fmt.Printf("Package %s already vendored\n", name)
 			wg.Add(1)
 			go sp.ResolveImports(wg, install)
 			continue

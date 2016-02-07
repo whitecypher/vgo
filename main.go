@@ -22,10 +22,11 @@ var (
 	installPath  = filepath.Join(gopath, "src")
 	cwd          = MustGetwd(os.Getwd())
 	manifestPath = filepath.Join(cwd, "vgo.yaml")
+	vendoring    = os.Getenv("GO15VENDOREXPERIMENT") == "1"
 )
 
 func main() {
-	if os.Getenv("GO15VENDOREXPERIMENT") == "1" {
+	if vendoring {
 		installPath = path.Join(cwd, "vendor")
 	}
 
@@ -113,13 +114,9 @@ func addToPackagesMap(p *Pkg) {
 	for _, sp := range p.Dependencies {
 		addToPackagesMap(sp)
 	}
-
-	// packageLock.RLock()
-	// fmt.Printf("%+v\n----\n", packages)
-	// packageLock.RUnlock()
 }
 
-func resolveDeps(packageName string) (deps []string) {
+func getDepsFromPackage(packageName string) []string {
 	b := &bytes.Buffer{}
 	cmd := exec.Command("go", "list", "-json", packageName)
 	cmd.Stdout = b
@@ -128,32 +125,31 @@ func resolveDeps(packageName string) (deps []string) {
 	err := json.Unmarshal(b.Bytes(), l)
 	if err != nil {
 		// TODO: add logging for this error
-		return
+		return []string{}
 	}
+	return l.Deps
+}
+
+func resolveDeps(packageName string, findDeps func(string) []string) (deps []string) {
+	foundDeps := findDeps(packageName)
 	ignoreMap := map[string]bool{}
 	for _, name := range native.Packages() {
 		ignoreMap[name] = true
 	}
-	for _, dep := range l.Deps {
+	for _, dep := range foundDeps {
 		// Skip native packages and vendor packages
 		if _, ok := ignoreMap[dep]; ok {
-			// fmt.Printf("Skipping native package %s\n", name)
 			continue
 		}
-
-		dep = strings.TrimPrefix(dep, filepath.Join(l.Importpath, "vendor"))
-
-		// recurse into subpackages
-		if strings.HasPrefix(dep, l.Importpath) {
-			deps = append(deps, resolveDeps(dep)...)
+		vendorPath := filepath.Join(packageName, "vendor")
+		vendored := vendoring && strings.HasPrefix(dep, vendorPath)
+		// recurse into subpackages that are not vendored
+		if strings.HasPrefix(dep, packageName) && !vendored {
+			deps = append(deps, resolveDeps(dep, findDeps)...)
 			continue
 		}
-
-		// fmt.Println(dep, filepath.Join(l.Importpath, "vendor"))
-
-		deps = append(deps, strings.Trim(dep, "/"))
+		deps = append(deps, strings.Trim(strings.TrimPrefix(dep, vendorPath), "/"))
 	}
-
 	return
 }
 
