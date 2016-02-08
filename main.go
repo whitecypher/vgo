@@ -9,15 +9,12 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/codegangsta/cli"
 	"github.com/whitecypher/vgo/lib/native"
 )
 
 var (
-	packages     = map[string]*Pkg{}
-	packageLock  = &sync.RWMutex{}
 	gopath       = os.Getenv("GOPATH")
 	installPath  = filepath.Join(gopath, "src")
 	cwd          = MustGetwd(os.Getwd())
@@ -29,6 +26,8 @@ func main() {
 	if vendoring {
 		installPath = path.Join(cwd, "vendor")
 	}
+
+	verbose = true
 
 	client := cli.NewApp()
 	client.Name = "vgo"
@@ -106,43 +105,52 @@ func repoName(name string) string {
 	return strings.Join(parts, "/")
 }
 
-func addToPackagesMap(p *Pkg) {
-	packageLock.Lock()
-	packages[repoName(p.Name)] = p
-	packageLock.Unlock()
-
-	for _, sp := range p.Dependencies {
-		addToPackagesMap(sp)
-	}
-}
-
 func getDepsFromPackage(packageName string) []string {
 	b := &bytes.Buffer{}
 	cmd := exec.Command("go", "list", "-json", packageName)
 	cmd.Stdout = b
-	cmd.Run()
-	l := &List{}
-	err := json.Unmarshal(b.Bytes(), l)
+	cmd.Stderr = os.Stderr
+	err := cmd.Run()
 	if err != nil {
-		// TODO: add logging for this error
+		fmt.Println(err.Error())
+		return []string{}
+	}
+	l := &List{}
+	// fmt.Println(string(b.Bytes()))
+	err = json.Unmarshal(b.Bytes(), l)
+	if err != nil {
+		fmt.Println(err.Error())
 		return []string{}
 	}
 	return l.Deps
 }
 
-func resolveDeps(packageName string, findDeps func(string) []string) (deps []string) {
-	foundDeps := findDeps(packageName)
-	ignoreMap := map[string]bool{}
-	for _, name := range native.Packages() {
-		ignoreMap[name] = true
+func getImportNameFromPackage(packageName string) string {
+	b := &bytes.Buffer{}
+	cmd := exec.Command("go", "list", "-f", "{{ .ImportPath }}", packageName)
+	cmd.Stdout = b
+	cmd.Stderr = os.Stderr
+	err := cmd.Run()
+	if err != nil {
+		fmt.Println(err.Error())
 	}
+	return strings.TrimSpace(string(b.Bytes()))
+}
+
+func resolveDeps(packageName string, findDeps func(string) []string) (deps []string) {
+	packageName = getImportNameFromPackage(packageName)
+	foundDeps := findDeps(packageName)
+	// fmt.Println("==", packageName)
+	// fmt.Printf("%+v\n", foundDeps)
 	for _, dep := range foundDeps {
+		// fmt.Println("--", dep)
 		// Skip native packages and vendor packages
-		if _, ok := ignoreMap[dep]; ok {
+		if native.IsNative(dep) {
 			continue
 		}
 		vendorPath := filepath.Join(packageName, "vendor")
 		vendored := vendoring && strings.HasPrefix(dep, vendorPath)
+		// fmt.Println(dep, vendorPath, vendored)
 		// recurse into subpackages that are not vendored
 		if strings.HasPrefix(dep, packageName) && !vendored {
 			deps = append(deps, resolveDeps(dep, findDeps)...)

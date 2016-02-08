@@ -113,21 +113,17 @@ func (p *Pkg) ResolveImports(wg *sync.WaitGroup, install bool) error {
 
 	var deps []string
 	deps = append(deps, resolveDeps(name, getDepsFromPackage)...)
+	fmt.Printf("%+v\n", deps)
 	for _, name := range deps {
-		// Skip packages already in manifest
 		name := repoName(name)
-		packageLock.RLock()
-		// replace packages list in favor of p.Parent with search method
-		sp, ok := packages[name]
-		packageLock.RUnlock()
-		if ok {
-			wg.Add(1)
-			go sp.ResolveImports(wg, install)
+		// Skip packages already in manifest
+		existing := p.Find(name)
+		if existing != nil {
+			// check the version for compatibility to try and share packages as much as possible
 			continue
 		}
 
 		dep := &Pkg{Name: name}
-		addToPackagesMap(dep)
 		wg.Add(1)
 		go dep.ResolveImports(wg, install)
 		p.Lock()
@@ -143,6 +139,7 @@ func (p *Pkg) Install() error {
 	if p.Name == "." || strings.HasSuffix(cwd, p.Name) {
 		return nil
 	}
+	Logf("Installing %s", p.Name)
 	p.Lock()
 	defer p.Unlock()
 	repo, err := p.VCS()
@@ -160,7 +157,7 @@ func (p *Pkg) Install() error {
 }
 
 // RepoPath path to the package
-func (p Pkg) RepoPath() string {
+func (p *Pkg) RepoPath() string {
 	return path.Join(installPath, p.Name)
 }
 
@@ -180,6 +177,7 @@ func (p *Pkg) Checkout() error {
 	if p.Reference != "" {
 		version = Version(p.Reference)
 	}
+	Logf("Switching %s to %s", p.Name, version)
 	err = repo.UpdateVersion(string(version))
 	if err != nil {
 		return err
@@ -232,7 +230,7 @@ func (p *Pkg) RepoURL() string {
 }
 
 // RepoType attempts to resolve the repository type of the package by it's name
-func (p Pkg) RepoType() vcs.Type {
+func (p *Pkg) RepoType() vcs.Type {
 	// If it's already installed in vendor or gopath, grab the type from there
 	repo := repoFromPath(p.RepoPath(), filepath.Join(gopath, "src", p.Name))
 	if repo != nil {
