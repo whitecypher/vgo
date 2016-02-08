@@ -38,7 +38,13 @@ func handleInit(c *cli.Context) {
 }
 
 func handleInstall(c *cli.Context) {
-	fmt.Println("install: ", c.Args())
+	p := &Pkg{}
+	p.Load(manifestPath)
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	go p.ResolveImports(wg, true)
+	wg.Wait()
+	p.Save(manifestPath)
 }
 
 func handleGet(c *cli.Context) {
