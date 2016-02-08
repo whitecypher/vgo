@@ -27,7 +27,7 @@ func handleDryRun(c *cli.Context) {
 	fmt.Println(string(data))
 }
 
-func handlePin(c *cli.Context) {
+func handleInit(c *cli.Context) {
 	p := &Pkg{}
 	p.Load(manifestPath)
 	wg := &sync.WaitGroup{}

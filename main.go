@@ -41,10 +41,10 @@ func main() {
 	// }
 	client.Commands = []cli.Command{
 		{
-			Name:        "pin",
+			Name:        "init",
 			Usage:       "Initialize vgo project",
 			Description: `Scan project for packages, install them if not already vendored and store results into vgo.yaml`,
-			Action:      handlePin,
+			Action:      handleInit,
 		},
 		{
 			Name: "dry",
