@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -18,7 +17,7 @@ var (
 	gopath       = os.Getenv("GOPATH")
 	installPath  = filepath.Join(gopath, "src")
 	cwd          = MustGetwd(os.Getwd())
-	manifestPath = filepath.Join(cwd, "vgo.yaml")
+	manifestPath = cwd
 	vendoring    = os.Getenv("GO15VENDOREXPERIMENT") == "1"
 )
 
@@ -106,57 +105,56 @@ func repoName(name string) string {
 }
 
 func getDepsFromPackage(packageName string) []string {
-	b := &bytes.Buffer{}
-	cmd := exec.Command("go", "list", "-json", packageName)
-	cmd.Stdout = b
-	cmd.Stderr = os.Stderr
-	err := cmd.Run()
+	output, err := exec.Command("go", "list", "-json", packageName).Output()
 	if err != nil {
-		fmt.Println(err.Error())
+		// fmt.Println("getDepsFromPackage", packageName, err.Error())
 		return []string{}
 	}
 	l := &List{}
-	// fmt.Println(string(b.Bytes()))
-	err = json.Unmarshal(b.Bytes(), l)
+	err = json.Unmarshal(output, l)
 	if err != nil {
-		fmt.Println(err.Error())
+		// fmt.Println("getDepsFromPackage", packageName, err.Error())
 		return []string{}
 	}
 	return l.Deps
 }
 
 func getImportNameFromPackage(packageName string) string {
-	b := &bytes.Buffer{}
-	cmd := exec.Command("go", "list", "-f", "{{ .ImportPath }}", packageName)
-	cmd.Stdout = b
-	cmd.Stderr = os.Stderr
-	err := cmd.Run()
-	if err != nil {
-		fmt.Println(err.Error())
+	name := packageName
+	output, err := exec.Command("go", "list", "-f", "{{ .ImportPath }}", packageName).Output()
+	if err == nil {
+		name = strings.TrimSpace(string(output))
 	}
-	return strings.TrimSpace(string(b.Bytes()))
+	// fmt.Println("getImportNameFromPackage", packageName, name)
+	return name
 }
 
 func resolveDeps(packageName string, findDeps func(string) []string) (deps []string) {
+	fmt.Println("resolveDeps", packageName)
 	packageName = getImportNameFromPackage(packageName)
-	foundDeps := findDeps(packageName)
-	// fmt.Println("==", packageName)
-	// fmt.Printf("%+v\n", foundDeps)
-	for _, dep := range foundDeps {
-		// fmt.Println("--", dep)
+	found := []string{}
+	for _, dep := range findDeps(packageName) {
 		// Skip native packages and vendor packages
 		if native.IsNative(dep) {
 			continue
 		}
 		vendorPath := filepath.Join(packageName, "vendor")
 		vendored := vendoring && strings.HasPrefix(dep, vendorPath)
-		// fmt.Println(dep, vendorPath, vendored)
 		// recurse into subpackages that are not vendored
 		if strings.HasPrefix(dep, packageName) && !vendored {
-			deps = append(deps, resolveDeps(dep, findDeps)...)
+			found = append(found, resolveDeps(dep, findDeps)...)
 			continue
 		}
-		deps = append(deps, strings.Trim(strings.TrimPrefix(dep, vendorPath), "/"))
+		found = append(found, repoName(strings.Trim(strings.TrimPrefix(dep, vendorPath), "/")))
+	}
+	// Reduce findings to a unique resultset
+	has := map[string]bool{}
+	for _, dep := range found {
+		if _, ok := has[dep]; ok || dep == packageName {
+			continue
+		}
+		has[dep] = true
+		deps = append(deps, dep)
 	}
 	return
 }

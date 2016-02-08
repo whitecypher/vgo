@@ -32,8 +32,11 @@ type List struct {
 type Pkg struct {
 	sync.Mutex `yaml:"-"`
 
-	repo   vcs.Repo `yaml:"-"`
-	parent *Pkg     `yaml:"-"`
+	repo         vcs.Repo `yaml:"-"`
+	parent       *Pkg     `yaml:"-"`
+	hasManifest  bool     `yaml:"-"`
+	manifestFile string   `yaml:"-"`
+	installed    bool     `yaml:"-"`
 
 	Name         string  `yaml:"pkg,omitempty"`
 	Version      Version `yaml:"ver,omitempty"`
@@ -44,7 +47,10 @@ type Pkg struct {
 
 // Load ...
 func (p *Pkg) Load(path string) error {
-	data, err := ioutil.ReadFile(path)
+	if p.manifestFile == "" {
+		p.manifestFile = "vgo.yaml"
+	}
+	data, err := ioutil.ReadFile(filepath.Join(path, p.manifestFile))
 	if err != nil {
 		return err
 	}
@@ -79,11 +85,14 @@ func (p *Pkg) Find(name string) *Pkg {
 
 // Save ...
 func (p *Pkg) Save(path string) error {
+	if p.manifestFile == "" {
+		p.manifestFile = "vgo.yaml"
+	}
 	data, err := yaml.Marshal(p)
 	if err != nil {
 		return err
 	}
-	err = ioutil.WriteFile(path, data, os.FileMode(0644))
+	err = ioutil.WriteFile(filepath.Join(path, p.manifestFile), data, os.FileMode(0644))
 	if err != nil {
 		return err
 	}
@@ -113,7 +122,6 @@ func (p *Pkg) ResolveImports(wg *sync.WaitGroup, install bool) error {
 
 	var deps []string
 	deps = append(deps, resolveDeps(name, getDepsFromPackage)...)
-	fmt.Printf("%+v\n", deps)
 	for _, name := range deps {
 		name := repoName(name)
 		// Skip packages already in manifest
@@ -124,11 +132,11 @@ func (p *Pkg) ResolveImports(wg *sync.WaitGroup, install bool) error {
 		}
 
 		dep := &Pkg{Name: name}
-		wg.Add(1)
-		go dep.ResolveImports(wg, install)
 		p.Lock()
 		p.Dependencies = append(p.Dependencies, dep)
 		p.Unlock()
+		wg.Add(1)
+		go dep.ResolveImports(wg, install)
 	}
 	return nil
 }
@@ -139,20 +147,25 @@ func (p *Pkg) Install() error {
 	if p.Name == "." || strings.HasSuffix(cwd, p.Name) {
 		return nil
 	}
-	Logf("Installing %s", p.Name)
 	p.Lock()
 	defer p.Unlock()
 	repo, err := p.VCS()
 	if err != nil {
 		return err
 	}
+	if repo == nil {
+		return fmt.Errorf("Could not resolve repo for %s", p.Name)
+	}
+	Logf("Installing %s", p.Name)
 	if !repo.CheckLocal() {
 		err = repo.Get()
 		if err != nil {
 			return err
 		}
 	}
+	p.installed = true
 	p.Reference, err = repo.Version()
+	p.Load(repo.LocalPath())
 	return err
 }
 
@@ -183,6 +196,7 @@ func (p *Pkg) Checkout() error {
 		return err
 	}
 	p.Reference, err = repo.Version()
+	p.Load(repo.LocalPath())
 	return err
 }
 
@@ -224,7 +238,7 @@ func (p *Pkg) RepoURL() string {
 	parts := strings.Split(p.Name, "/")
 	switch parts[0] {
 	case "github.com":
-		return fmt.Sprintf("git@github.com:%s.git", strings.Join(parts[1:2], "/"))
+		return fmt.Sprintf("git@github.com:%s.git", strings.Join(parts[1:3], "/"))
 	}
 	return ""
 }
@@ -246,6 +260,16 @@ func (p *Pkg) RepoType() vcs.Type {
 	return vcs.NoVCS
 }
 
+// MarshalYAML implements yaml.Marsheler to prevent duplicate storage of nested packages with vgo.yaml
+func (p *Pkg) MarshalYAML() (interface{}, error) {
+	copy := *p
+	if copy.hasManifest {
+		copy.Dependencies = []*Pkg{}
+	}
+	return copy, nil
+}
+
+// repoFromPath attempts to resolve the vcs.Repo from any of the given paths in sequence.
 func repoFromPath(paths ...string) vcs.Repo {
 	for _, path := range paths {
 		repoType, err := vcs.DetectVcsFromFS(path)

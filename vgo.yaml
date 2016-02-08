@@ -1,7 +1,7 @@
 deps:
+- pkg: github.com/Masterminds/vcs
+  ref: 4e0f9d754b04dbb4fc9a62aa5ef6bf22ee0937a8
 - pkg: github.com/codegangsta/cli
   ref: cf1f63a7274872768d4037305d572b70b1199397
 - pkg: gopkg.in/yaml.v2
   ref: f7716cbe52baa25d2e9b0d0da546fcf909fc16b4
-- pkg: github.com/Masterminds/vcs
-  ref: 4e0f9d754b04dbb4fc9a62aa5ef6bf22ee0937a8
