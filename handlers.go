@@ -18,7 +18,7 @@ func handleDryRun(c *cli.Context) {
 	p.Load(manifestPath)
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
-	go p.ResolveImports(wg, false)
+	p.ResolveImports(wg, false)
 	wg.Wait()
 	data, err := yaml.Marshal(p)
 	if err != nil {

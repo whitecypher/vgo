@@ -120,8 +120,13 @@ func (p *Pkg) ResolveImports(wg *sync.WaitGroup, install bool) error {
 		}
 	}
 
+	// find a better way of doing this
+	path := name
+	if path != "." {
+		path = fmt.Sprintf("./vendor/%s", path)
+	}
 	var deps []string
-	deps = append(deps, resolveDeps(name, getDepsFromPackage)...)
+	deps = append(deps, resolveDeps(path, getDepsFromPackage)...)
 	for _, name := range deps {
 		name := repoName(name)
 		// Skip packages already in manifest
@@ -131,12 +136,12 @@ func (p *Pkg) ResolveImports(wg *sync.WaitGroup, install bool) error {
 			continue
 		}
 
-		dep := &Pkg{Name: name}
+		dep := &Pkg{Name: name, parent: p}
 		p.Lock()
 		p.Dependencies = append(p.Dependencies, dep)
 		p.Unlock()
 		wg.Add(1)
-		go dep.ResolveImports(wg, install)
+		dep.ResolveImports(wg, install)
 	}
 	return nil
 }

@@ -105,15 +105,16 @@ func repoName(name string) string {
 }
 
 func getDepsFromPackage(packageName string) []string {
-	output, err := exec.Command("go", "list", "-json", packageName).Output()
+	output, err := exec.Command("go", "list", "-json", packageName).CombinedOutput()
 	if err != nil {
-		// fmt.Println("getDepsFromPackage", packageName, err.Error())
+		fmt.Println("getDepsFromPackage", packageName, err.Error())
+		fmt.Println("??", string(output))
 		return []string{}
 	}
 	l := &List{}
 	err = json.Unmarshal(output, l)
 	if err != nil {
-		// fmt.Println("getDepsFromPackage", packageName, err.Error())
+		fmt.Println("getDepsFromPackage", packageName, err.Error())
 		return []string{}
 	}
 	return l.Deps
@@ -156,6 +157,7 @@ func resolveDeps(packageName string, findDeps func(string) []string) (deps []str
 		has[dep] = true
 		deps = append(deps, dep)
 	}
+	fmt.Println(packageName, "--", strings.Join(deps, " "))
 	return
 }
 
