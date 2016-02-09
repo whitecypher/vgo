@@ -16,18 +16,6 @@ import (
 // Version compatibility string e.g. "~1.0.0" or "1.*"
 type Version string
 
-// List structure from go list -json .
-type List struct {
-	Dir        string   `json:"Dir"`
-	Importpath string   `json:"ImportPath"`
-	Name       string   `json:"Name"`
-	Target     string   `json:"Target"`
-	Root       string   `json:"Root"`
-	Gofiles    []string `json:"GoFiles"`
-	Imports    []string `json:"Imports"`
-	Deps       []string `json:"Deps"`
-}
-
 // Pkg ...
 type Pkg struct {
 	sync.Mutex `yaml:"-"`
@@ -103,11 +91,6 @@ func (p *Pkg) Save(path string) error {
 func (p *Pkg) ResolveImports(wg *sync.WaitGroup, install bool) error {
 	defer wg.Done()
 
-	name := p.Name
-	if len(name) == 0 || strings.HasSuffix(cwd, p.Name) {
-		name = "."
-	}
-
 	if install {
 		err := p.Install()
 		if err != nil {
@@ -120,14 +103,16 @@ func (p *Pkg) ResolveImports(wg *sync.WaitGroup, install bool) error {
 		}
 	}
 
-	// find a better way of doing this
-	path := name
-	if path != "." {
-		path = fmt.Sprintf("./vendor/%s", path)
+	pkgName := p.Name
+	if len(pkgName) == 0 {
+		pkgName = "."
+	} else {
+		if vendoring {
+			pkgName = fmt.Sprintf("./vendor/%s", pkgName)
+		}
 	}
-	var deps []string
-	deps = append(deps, resolveDeps(path, getDepsFromPackage)...)
-	for _, name := range deps {
+
+	for _, name := range resolveDeps(pkgName, getDepsFromPackage) {
 		name := repoName(name)
 		// Skip packages already in manifest
 		existing := p.Find(name)
@@ -135,13 +120,12 @@ func (p *Pkg) ResolveImports(wg *sync.WaitGroup, install bool) error {
 			// check the version for compatibility to try and share packages as much as possible
 			continue
 		}
-
 		dep := &Pkg{Name: name, parent: p}
 		p.Lock()
 		p.Dependencies = append(p.Dependencies, dep)
 		p.Unlock()
 		wg.Add(1)
-		dep.ResolveImports(wg, install)
+		go dep.ResolveImports(wg, install)
 	}
 	return nil
 }

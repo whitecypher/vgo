@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -97,6 +98,10 @@ func main() {
 }
 
 func repoName(name string) string {
+	// Remove any vendor path prefixes
+	vendorParts := strings.Split(name, "/vendor/")
+	name = vendorParts[len(vendorParts)-1]
+	// Limit root package name to 3 levels
 	parts := strings.Split(name, "/")
 	if len(parts) > 3 {
 		parts = parts[0:3]
@@ -104,60 +109,68 @@ func repoName(name string) string {
 	return strings.Join(parts, "/")
 }
 
-func getDepsFromPackage(packageName string) []string {
-	output, err := exec.Command("go", "list", "-json", packageName).CombinedOutput()
-	if err != nil {
-		fmt.Println("getDepsFromPackage", packageName, err.Error())
-		fmt.Println("??", string(output))
-		return []string{}
-	}
-	l := &List{}
-	err = json.Unmarshal(output, l)
-	if err != nil {
-		fmt.Println("getDepsFromPackage", packageName, err.Error())
-		return []string{}
-	}
-	return l.Deps
+// ListResult structure from go list -json .
+type ListResult struct {
+	ImportPath string   `json:"import_path"`
+	Deps       []string `json:"deps"`
 }
 
-func getImportNameFromPackage(packageName string) string {
-	name := packageName
-	output, err := exec.Command("go", "list", "-f", "{{ .ImportPath }}", packageName).Output()
-	if err == nil {
-		name = strings.TrimSpace(string(output))
+func getDepsFromPackage(packageName string) []ListResult {
+	path := "./..."
+	if strings.Trim(packageName, ".") != "" {
+		// filepath.Join resolve ./... to ... which we don't want
+		path = filepath.Join(packageName, "...")
 	}
-	// fmt.Println("getImportNameFromPackage", packageName, name)
-	return name
+	tmpl := `{ "import_path":"{{ .ImportPath }}", "deps":["{{ join .Deps "\",\"" }}"]}`
+	output, err := exec.Command("go", "list", "-f", tmpl, path).Output()
+	if err != nil {
+		fmt.Println("getDepsFromPackage", packageName, err.Error())
+		// fmt.Println("??", string(output))
+		return []ListResult{}
+	}
+	var l []ListResult
+	// Combine results into a json array of values
+	b := &bytes.Buffer{}
+	b.WriteString("[")
+	b.Write(bytes.Join(bytes.Split(bytes.TrimSpace(output), []byte("\n")), []byte(",")))
+	b.WriteString("]")
+	// fmt.Println(b.String())
+	err = json.Unmarshal(b.Bytes(), &l)
+	if err != nil {
+		fmt.Println("getDepsFromPackage", packageName, err.Error())
+		return []ListResult{}
+	}
+	return l
 }
 
-func resolveDeps(packageName string, findDeps func(string) []string) (deps []string) {
+func resolveDeps(packageName string, findDeps func(string) []ListResult) (deps []string) {
 	fmt.Println("resolveDeps", packageName)
-	packageName = getImportNameFromPackage(packageName)
-	found := []string{}
-	for _, dep := range findDeps(packageName) {
-		// Skip native packages and vendor packages
-		if native.IsNative(dep) {
-			continue
-		}
-		vendorPath := filepath.Join(packageName, "vendor")
-		vendored := vendoring && strings.HasPrefix(dep, vendorPath)
-		// recurse into subpackages that are not vendored
-		if strings.HasPrefix(dep, packageName) && !vendored {
-			found = append(found, resolveDeps(dep, findDeps)...)
-			continue
-		}
-		found = append(found, repoName(strings.Trim(strings.TrimPrefix(dep, vendorPath), "/")))
+	found := findDeps(packageName)
+	if len(found) > 0 {
+		packageName = found[0].ImportPath
 	}
-	// Reduce findings to a unique resultset
 	has := map[string]bool{}
-	for _, dep := range found {
-		if _, ok := has[dep]; ok || dep == packageName {
-			continue
+	for _, lr := range found {
+		// Iterate dependencies to extract unique items
+		for _, dep := range lr.Deps {
+			// Skip native packages and vendor packages
+			if native.IsNative(dep) {
+				continue
+			}
+			// Skip subpackages except if vendored
+			vendorPath := filepath.Join(packageName, "vendor")
+			vendored := vendoring && strings.HasPrefix(dep, vendorPath)
+			if strings.HasPrefix(dep, packageName) && !vendored {
+				continue
+			}
+			// Skip packages already found
+			if _, ok := has[dep]; ok || dep == packageName {
+				continue
+			}
+			has[dep] = true
+			deps = append(deps, dep)
 		}
-		has[dep] = true
-		deps = append(deps, dep)
 	}
-	fmt.Println(packageName, "--", strings.Join(deps, " "))
 	return
 }
 
