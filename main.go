@@ -16,7 +16,8 @@ import (
 
 var (
 	gopath       = os.Getenv("GOPATH")
-	installPath  = filepath.Join(gopath, "src")
+	gosrcpath    = filepath.Join(gopath, "src")
+	installPath  = gosrcpath
 	cwd          = MustGetwd(os.Getwd())
 	manifestPath = cwd
 	vendoring    = os.Getenv("GO15VENDOREXPERIMENT") == "1"
@@ -116,15 +117,14 @@ type ListResult struct {
 }
 
 func getDepsFromPackage(packageName string) []ListResult {
-	path := "./..."
+	path := "."
 	if strings.Trim(packageName, ".") != "" {
-		// filepath.Join resolve ./... to ... which we don't want
-		path = filepath.Join(packageName, "...")
+		path = packageName
 	}
-	tmpl := `{ "import_path":"{{ .ImportPath }}", "deps":["{{ join .Deps "\",\"" }}"]}`
+	tmpl := `{ "import_path":"{{ .ImportPath }}", "deps":["{{ join .Deps "\",\"" }}"], "test_deps":["{{ join .TestImports "\",\"" }}"]}`
 	output, err := exec.Command("go", "list", "-f", tmpl, path).Output()
 	if err != nil {
-		fmt.Println("getDepsFromPackage", packageName, err.Error())
+		fmt.Println("getDepsFromPackage 1", packageName, err.Error())
 		// fmt.Println("??", string(output))
 		return []ListResult{}
 	}
@@ -137,18 +137,18 @@ func getDepsFromPackage(packageName string) []ListResult {
 	// fmt.Println(b.String())
 	err = json.Unmarshal(b.Bytes(), &l)
 	if err != nil {
-		fmt.Println("getDepsFromPackage", packageName, err.Error())
+		fmt.Println("getDepsFromPackage 2", packageName, err.Error())
 		return []ListResult{}
 	}
 	return l
 }
 
 func resolveDeps(packageName string, findDeps func(string) []ListResult) (deps []string) {
-	fmt.Println("resolveDeps", packageName)
 	found := findDeps(packageName)
 	if len(found) > 0 {
 		packageName = found[0].ImportPath
 	}
+	vendorPath := filepath.Join(packageName, "vendor")
 	has := map[string]bool{}
 	for _, lr := range found {
 		// Iterate dependencies to extract unique items
@@ -158,11 +158,11 @@ func resolveDeps(packageName string, findDeps func(string) []ListResult) (deps [
 				continue
 			}
 			// Skip subpackages except if vendored
-			vendorPath := filepath.Join(packageName, "vendor")
-			vendored := vendoring && strings.HasPrefix(dep, vendorPath)
-			if strings.HasPrefix(dep, packageName) && !vendored {
+			vendorPkg := vendoring && strings.HasPrefix(dep, vendorPath)
+			if strings.HasPrefix(dep, packageName) && !vendorPkg {
 				continue
 			}
+			dep := repoName(dep)
 			// Skip packages already found
 			if _, ok := has[dep]; ok || dep == packageName {
 				continue
