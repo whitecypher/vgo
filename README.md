@@ -20,28 +20,36 @@ go install github.com/whitecypher/vgo
 Usage
 -----
 
-#### Init
+#### Default
 
-Initialize an existing project with a manifest of all automatically resolved dependencies.
+Scans your project to create/update a manifest of all automatically resolved dependencies. Dependencies not yet added will be added, and packages no longer in use are removed.
 
 ```sh
-vgo init
+vgo
+```
+
+#### Sync
+
+Sync installs the dependencies listed in the manifest at the designated reference point. Where no reference point is available in the manifest the last reference compatible with the required version, branch, tag, or commit will be installed. The installed reference point will be stored in the manifest unless otherwise suppressed using the `-dry` option.
+
+```sh
+vgo [-dry] sync
 ```
 
 #### Get
 
-Get a dependency compatible with the optionally specified version, branch, tag, or commit. If the current installed version does not match the required reference it will be updated and the new reference stored in the dependency manifest.
+Get a dependency compatible with the optionally specified version, branch, tag, or commit. If the current installed version does not match the required reference it will be updated and the new reference stored in the dependency manifest. When the `-u` flag is provided a dependency will be updated to the latest reference compatible with the stored version, branch, tag, or commit. If a {packagename} with a [#{version}] is given, the `-u` option is implied.
 
 ```sh
-vgo get ./...
+vgo get [-u] ./...
 #or
-vgo get {packagename}[#{version}]
+vgo get [-u] {packagename}[#{version}]
 #or
-vgo get {packagename}[#{branch}]
+vgo get [-u] {packagename}[#{branch}]
 #or
-vgo get {packagename}[#{tag}]
+vgo get [-u] {packagename}[#{tag}]
 #or
-vgo get {packagename}[#{commit}]
+vgo get [-u] {packagename}[#{commit}]
 ```
 
 e.g. `vgo get github.com/codegangsta/cli#~1.4.1`
@@ -57,22 +65,6 @@ vgo remove {packagename}
 ```
 
 e.g. `vgo remove github.com/codegangsta/cli`
-
-#### Clean
-
-Clean your dependency tree. This automatically scans your application for dependencies and removes any unused vendors from your manifest and vendor directory. While doing this
-
-```sh
-vgo clean
-```
-
-#### Vendor
-
-IDEA: Include your vendor dir in your commits. This should prevent vendored repositories from being added to you project as submodules so all source files will be committed along with your own application code.
-
-```sh
-vgo vend
-```
 
 #### Catchall
 

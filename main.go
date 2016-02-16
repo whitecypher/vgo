@@ -112,8 +112,9 @@ func repoName(name string) string {
 
 // ListResult structure from go list -json .
 type ListResult struct {
-	ImportPath string   `json:"import_path"`
-	Deps       []string `json:"deps"`
+	ImportPath  string   `json:"import_path"`
+	Imports     []string `json:"imports"`
+	TestImports []string `json:"test_imports"`
 }
 
 func getDepsFromPackage(packageName string) []ListResult {
@@ -121,7 +122,7 @@ func getDepsFromPackage(packageName string) []ListResult {
 	if strings.Trim(packageName, ".") != "" {
 		path = packageName
 	}
-	tmpl := `{ "import_path":"{{ .ImportPath }}", "deps":["{{ join .Deps "\",\"" }}"], "test_deps":["{{ join .TestImports "\",\"" }}"]}`
+	tmpl := `{ "import_path":"{{ .ImportPath }}", "imports":["{{ join .Imports "\",\"" }}"], "test_imports":["{{ join .TestImports "\",\"" }}"]}`
 	output, err := exec.Command("go", "list", "-f", tmpl, path).Output()
 	if err != nil {
 		fmt.Println("getDepsFromPackage 1", packageName, err.Error())
@@ -152,7 +153,8 @@ func resolveDeps(packageName string, findDeps func(string) []ListResult) (deps [
 	has := map[string]bool{}
 	for _, lr := range found {
 		// Iterate dependencies to extract unique items
-		for _, dep := range lr.Deps {
+		deps := append(lr.Imports, lr.TestImports...)
+		for _, dep := range deps {
 			// Skip native packages and vendor packages
 			if native.IsNative(dep) {
 				continue
