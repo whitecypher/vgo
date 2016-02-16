@@ -8,6 +8,8 @@ Lightweight unassuming application vendoring for your go projects. VGO decorates
 
 The only real requirement is that your GO15VENDOREXPERIMENT environment variable is set to 1. As of Go#1.6 this will be the default setting.
 
+Version tags (e.g. 1.4 or v1.4) are matched according to Semver rules.
+
 Install
 -------
 
@@ -52,7 +54,7 @@ vgo get [-u] {packagename}[#{tag}]
 vgo get [-u] {packagename}[#{commit}]
 ```
 
-e.g. `vgo get github.com/codegangsta/cli#~1.4.1`
+e.g. `vgo get github.com/codegangsta/cli#v1.4.1` or `vgo get github.com/codegangsta/cli#v1.4` or `vgo get github.com/codegangsta/cli#v1`
 
 #### Remove
 
