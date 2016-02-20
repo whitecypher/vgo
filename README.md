@@ -24,23 +24,23 @@ Usage
 
 #### Default
 
-Scans your project to create/update a manifest of all automatically resolved dependencies. Dependencies not yet added will be added, and packages no longer in use are removed.
+Installs the dependencies listed in the manifest at the designated reference point. If no manifest exists, `go in` is implied and run automatically to build dependencies and install them. Where no reference point is available in the manifest the last reference compatible with the required version, branch, tag, or commit will be installed. The installed reference point will be stored in the manifest unless otherwise suppressed using the `-dry` option.
 
 ```sh
-vgo
+vgo [-dry]
 ```
 
-#### Sync
+#### In
 
-Sync installs the dependencies listed in the manifest at the designated reference point. Where no reference point is available in the manifest the last reference compatible with the required version, branch, tag, or commit will be installed. The installed reference point will be stored in the manifest unless otherwise suppressed using the `-dry` option.
+Scans your project to create/update a manifest of all automatically resolved dependencies. Dependencies not yet added will be added, and packages no longer in use are removed. Result are stored in the vgo manifest file unless executed with the `-dry` option, which may also be inherited from the default `vgo` when `go in` is implied.
 
 ```sh
-vgo [-dry] sync
+vgo [-dry] in
 ```
 
 #### Get
 
-Get a dependency compatible with the optionally specified version, branch, tag, or commit. If the current installed version does not match the required reference it will be updated and the new reference stored in the dependency manifest. When the `-u` flag is provided a dependency will be updated to the latest reference compatible with the stored version, branch, tag, or commit. If a {packagename} with a [#{version}] is given, the `-u` option is implied.
+Get a dependency compatible with the optionally specified version, branch, tag, or commit. If the current installed reference is not compatible with the required version, branch, tag, or commit it will be updated and the new reference stored in the dependency manifest. This done to ensure manual changes to the manifest will be adhered to when compatibility is compromised. If current reference is compatible (an earlier reference point of the master branch for example) then the stored reference point will be used and the `-u` flag will must be added. When the `-u` flag is provided a dependency will be updated to the latest reference compatible with the stored version, branch, tag, or commit. If a {packagename} with a [#{version|branch|tag|commit}] is given, and differs from that stored in the manifest, the `-u` option is implied.
 
 ```sh
 vgo get [-u] ./...
@@ -70,7 +70,7 @@ e.g. `vgo remove github.com/codegangsta/cli`
 
 #### Catchall
 
-Unmatched actions should fall through to `go` command automatically. This means that `vgo run` will automatically trigger `go run` with all the same rules and options available to you as the standard go commands.
+Unmatched actions should fall through to `go` command automatically. This means that `vgo run` will automatically trigger `go run` with all the same rules and options available to you as the standard go commands. Vgo will run a `sync` action before deferring to the default go behavior to ensure the action is run on dependable codebase.
 
 ```sh
 vgo ...
