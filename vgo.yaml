@@ -1,8 +1,8 @@
 pkg: github.com/whitecypher/vgo
 deps:
 - pkg: github.com/Masterminds/vcs
-  ref: 4e0f9d754b04dbb4fc9a62aa5ef6bf22ee0937a8
-- pkg: github.com/codegangsta/cli
-  ref: 0ab42fd482c27cf2c95e7794ad3bb2082c2ab2d7
+  ref: 9c0db6583837118d5df7c2ae38ab1c194e434b35
+- pkg: github.com/jawher/mow.cli
+  ref: 772320464101e904cd51198160eb4d489be9cc49
 - pkg: gopkg.in/yaml.v2
   ref: f7716cbe52baa25d2e9b0d0da546fcf909fc16b4

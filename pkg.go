@@ -1,77 +1,43 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
+	"go/build"
 	"io/ioutil"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 
 	"github.com/Masterminds/vcs"
+	"github.com/whitecypher/vgo/lib/native"
 	"gopkg.in/yaml.v2"
 )
 
 // Version compatibility string e.g. "~1.0.0" or "1.*"
 type Version string
 
-// GoListPackage model for output from go list -json
-type GoListPackage struct {
-	Dir           string // directory containing package sources
-	ImportPath    string // import path of package in dir
-	ImportComment string // path in import comment on package statement
-	Name          string // package name
-	Doc           string // package documentation string
-	Target        string // install path
-	Shlib         string // the shared library that contains this package (only set when -linkshared)
-	Goroot        bool   // is this package in the Go root?
-	Standard      bool   // is this package part of the standard Go library?
-	Stale         bool   // would 'go install' do anything for this package?
-	Root          string // Go root or Go path dir containing this package
-
-	// Source files
-	GoFiles        []string // .go source files (excluding CgoFiles, TestGoFiles, XTestGoFiles)
-	CgoFiles       []string // .go sources files that import "C"
-	IgnoredGoFiles []string // .go sources ignored due to build constraints
-	CFiles         []string // .c source files
-	CXXFiles       []string // .cc, .cxx and .cpp source files
-	MFiles         []string // .m source files
-	HFiles         []string // .h, .hh, .hpp and .hxx source files
-	SFiles         []string // .s source files
-	SwigFiles      []string // .swig files
-	SwigCXXFiles   []string // .swigcxx files
-	SysoFiles      []string // .syso object files to add to archive
-
-	// Cgo directives
-	CgoCFLAGS    []string // cgo: flags for C compiler
-	CgoCPPFLAGS  []string // cgo: flags for C preprocessor
-	CgoCXXFLAGS  []string // cgo: flags for C++ compiler
-	CgoLDFLAGS   []string // cgo: flags for linker
-	CgoPkgConfig []string // cgo: pkg-config names
-
-	// Dependency information
-	Imports []string // import paths used by this package
-	Deps    []string // all (recursively) imported dependencies
-
-	TestGoFiles  []string // _test.go files in package
-	TestImports  []string // imports from TestGoFiles
-	XTestGoFiles []string // _test.go files outside package
-	XTestImports []string // imports from XTestGoFiles
+// NewPkg creates and initializes a Pkg
+func NewPkg(name string) *Pkg {
+	return &Pkg{
+		Name: name,
+	}
 }
 
 // Pkg ...
 type Pkg struct {
 	sync.Mutex `yaml:"-"`
 
-	repo         vcs.Repo `yaml:"-"`
-	parent       *Pkg     `yaml:"-"`
-	hasManifest  bool     `yaml:"-"`
-	manifestFile string   `yaml:"-"`
-	installed    bool     `yaml:"-"`
-	path         string   `yaml:"-"`
+	meta         *build.Package `yaml:"-"`
+	repo         vcs.Repo       `yaml:"-"`
+	parent       *Pkg           `yaml:"-"`
+	hasManifest  bool           `yaml:"-"`
+	manifestFile string         `yaml:"-"`
+	installed    bool           `yaml:"-"`
+	path         string         `yaml:"-"`
+	installPath  string         `yaml:"-"`
 
 	Name         string  `yaml:"pkg,omitempty"`
 	Version      Version `yaml:"ver,omitempty"`
@@ -80,11 +46,24 @@ type Pkg struct {
 	URL          string  `yaml:"url,omitempty"`
 }
 
+// Meta get the package meta data using the go/build internal package profiler
+func (p *Pkg) Meta() *build.Package {
+	if p.meta != nil {
+		return p.meta
+	}
+	m, err := build.Import(p.FQN(), cwd, build.ImportMode(0))
+	if err != nil {
+		Logf("Unable to import package %s with error %s", p.FQN(), err.Error())
+	}
+	p.meta = m
+	return m
+}
+
 // FQN resolves the fully qualified package name. This is the equivalent to the name that go uses dependant on it's context.
 func (p Pkg) FQN() string {
-	if p.IsInGoPath() && p.parent != nil {
-		return filepath.Join(p.parent.FQN(), "vendor", p.Name)
-	}
+	// if p.IsInGoPath() && p.parent != nil {
+	// 	return filepath.Join(p.parent.FQN(), "vendor", p.Name)
+	// }
 	if p.Name == "" {
 		return "."
 	}
@@ -107,36 +86,103 @@ func (p Pkg) IsInGoPath() bool {
 	return strings.HasPrefix(p.path, gosrcpath)
 }
 
-// Init attempts to detect package information
-func (p *Pkg) Init() {
-	output, err := exec.Command("go", "list", "-json", p.FQN()).Output()
-	if err != nil {
-		return
+func resolveImportsRecursive(path string, imports []string) []string {
+	r := []string{}
+	for _, i := range imports {
+		// Skip native packages
+		if native.IsNative(i) {
+			continue
+		}
+		// check subpackages for dependencies
+		if strings.HasPrefix(i, path) { //  && !strings.HasPrefix(i, filepath.Join(path, "vendor"))
+			m, err := build.Import(i, cwd, build.ImportMode(0))
+			if err != nil {
+				fmt.Println(err.Error())
+			} else {
+				r = append(r, resolveImportsRecursive(i, m.Imports)...)
+			}
+		}
+		name := repoName(i)
+		if name == path {
+			continue
+		}
+		r = append(r, name)
 	}
-	var model GoListPackage
-	err = json.Unmarshal(output, &model)
-	if err != nil {
-		return
+	// return only unique imports
+	u := []string{}
+	m := map[string]bool{}
+	for _, i := range r {
+		if _, ok := m[i]; ok {
+			continue
+		}
+		m[i] = true
+		u = append(u, i)
 	}
+	sort.Strings(u)
+	return u
+}
+
+// Init ...
+func (p *Pkg) Init(meta *build.Package) {
 	p.Lock()
-	p.path = model.Dir
-	p.manifestFile = "vgo.yaml"
+	p.path = meta.Dir
 	if p.IsInGoPath() {
-		p.Name = repoName(model.ImportPath)
+		p.Name = repoName(meta.ImportPath)
 	}
 	p.Unlock()
+
+	// i := resolveImportsRecursive(p.Name, meta.Imports)
+	// js, _ := json.MarshalIndent(i, "", "  ")
+	// fmt.Println(string(js))
+	// os.Exit(0)
+
+	wg := sync.WaitGroup{}
+	for _, i := range resolveImportsRecursive(p.Name, meta.Imports) {
+		name := repoName(i)
+		// Skip subpackages
+		if strings.HasPrefix(name, p.Name) {
+			continue
+		}
+
+		// Reuse packages already added to the project
+		dep := p.Find(name)
+		if dep == nil {
+			fmt.Println("adding", name)
+			dep = NewPkg(name)
+			dep.parent = p
+			p.Lock()
+			p.Dependencies = append(p.Dependencies, dep)
+			p.Unlock()
+		} else {
+			// check the version compatibility. We might need to create a broken diamond here.
+		}
+		wg.Add(1)
+		go func() {
+			dep.Install()
+			wg.Done()
+		}()
+	}
+	wg.Wait()
+	// p.InstallDeps()
 }
 
 // LoadManifest ...
 func (p *Pkg) LoadManifest() error {
+	p.hasManifest = false
+	if len(p.manifestFile) == 0 {
+		p.manifestFile = "vgo.yaml"
+	}
+	fmt.Println("Loading manifest", filepath.Join(p.path, p.manifestFile))
 	data, err := ioutil.ReadFile(filepath.Join(p.path, p.manifestFile))
 	if err != nil {
+		fmt.Println("Unable to load manifest with error", err.Error())
 		return err
 	}
 	p.Lock()
 	err = yaml.Unmarshal(data, p)
 	p.Unlock()
 	if err != nil {
+		fmt.Println("Unable to unmarshal manifest with error", err.Error())
 		return err
 	}
 	p.hasManifest = true
@@ -156,7 +202,9 @@ func (p *Pkg) updateDepsParents() {
 
 // Find looks for a package in it's dependencies or parents dependencies recursively
 func (p Pkg) Find(name string) *Pkg {
+	fmt.Println("find", name)
 	for _, d := range p.Dependencies {
+		fmt.Println("find - check against", d.Name)
 		if (*d).Name == name {
 			return d
 		}
@@ -180,40 +228,8 @@ func (p Pkg) SaveManifest() error {
 	return nil
 }
 
-// ResolveImports ...
-func (p *Pkg) ResolveImports() error {
-	wg := &sync.WaitGroup{}
-	for _, name := range resolveDeps(p.FQN(), getDepsFromPackage) {
-		name := repoName(name)
-		// Skip packages already in manifest
-		dep := p.Find(name)
-		if dep != nil {
-			// check the version for compatibility to try and share packages as much as possible
-		} else {
-			dep = &Pkg{Name: name, parent: p}
-			dep.Init()
-			dep.Lock()
-			dep.Dependencies = append(dep.Dependencies, dep)
-			dep.Unlock()
-		}
-
-		wg.Add(1)
-		go dep.ResolveImportsAsync(wg)
-	}
-
-	wg.Wait()
-	return nil
-}
-
-// ResolveImportsAsync runs a ResolveImports asynchronously
-func (p *Pkg) ResolveImportsAsync(wg *sync.WaitGroup) {
-	p.ResolveImports()
-	wg.Done()
-}
-
 // Install the package
 func (p *Pkg) Install() error {
-	fmt.Println("install")
 	if p.parent == nil {
 		// don't touch the current working directory
 		return nil
@@ -235,29 +251,43 @@ func (p *Pkg) Install() error {
 	}
 	p.Unlock()
 	p.Checkout()
-	p.InstallDeps()
+	p.LoadManifest()
+	if !p.hasManifest {
+		p.Init(p.Meta())
+	}
 	return err
 }
 
 // InstallDeps install package dependencies
 func (p *Pkg) InstallDeps() (err error) {
+	wg := sync.WaitGroup{}
 	for _, dep := range p.Dependencies {
-		err = dep.Install()
-		if err != nil {
-			Logf("Package %s could not be installed with error", err.Error())
-		}
+		d := dep
+		wg.Add(1)
+		go func() {
+			err = d.Install()
+			if err != nil {
+				Logf("Package %s could not be installed with error", err.Error())
+			}
+			wg.Done()
+		}()
+
 	}
+	wg.Wait()
 	return
 }
 
 // RepoPath path to the package
 func (p Pkg) RepoPath() string {
-	return path.Join(installPath, p.Name)
+	dir := p.installPath
+	if len(dir) == 0 {
+		dir = installPath
+	}
+	return path.Join(dir, p.Name)
 }
 
 // Checkout switches the package version to the commit nearest maching the Compat string
 func (p *Pkg) Checkout() error {
-	fmt.Println("checkout")
 	if p.parent == nil {
 		// don't touch the current working directory
 		return nil
@@ -289,7 +319,9 @@ func (p *Pkg) Checkout() error {
 	p.Unlock()
 	Logf("Switching %s to %s", p.Name, version)
 	p.LoadManifest()
-	p.ResolveImports()
+	if !p.hasManifest {
+		p.Init(p.Meta())
+	}
 	return err
 }
 

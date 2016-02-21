@@ -24,7 +24,7 @@ Usage
 
 #### Default
 
-Installs the dependencies listed in the manifest at the designated reference point. If no manifest exists, `go in` is implied and run automatically to build dependencies and install them. Where no reference point is available in the manifest the last reference compatible with the required version, branch, tag, or commit will be installed. The installed reference point will be stored in the manifest unless otherwise suppressed using the `-dry` option.
+Installs the dependencies listed in the manifest at the designated reference point. If no manifest exists, `go in` is implied and run automatically to build dependencies and install them. Where no reference point is available in the manifest the last reference compatible with the required version, branch, tag, or commit will be installed. The installed reference point will be stored in the manifest unless otherwise suppressed using the `--dry` option.
 
 ```sh
 vgo [-dry]
@@ -32,7 +32,7 @@ vgo [-dry]
 
 #### In
 
-Scans your project to create/update a manifest of all automatically resolved dependencies. Dependencies not yet added will be added, and packages no longer in use are removed. Result are stored in the vgo manifest file unless executed with the `-dry` option, which may also be inherited from the default `vgo` when `go in` is implied.
+Scans your project to create/update a manifest of all automatically resolved dependencies. Dependencies not yet added will be added, and packages no longer in use are removed. Result are stored in the vgo manifest file unless executed with the `--dry` option, which may also be inherited from the default `vgo` when `go in` is implied.
 
 ```sh
 vgo [-dry] in
