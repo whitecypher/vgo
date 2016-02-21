@@ -61,9 +61,13 @@ func (p *Pkg) Meta() *build.Package {
 
 // FQN resolves the fully qualified package name. This is the equivalent to the name that go uses dependant on it's context.
 func (p Pkg) FQN() string {
-	// if p.IsInGoPath() && p.parent != nil {
-	// 	return filepath.Join(p.parent.FQN(), "vendor", p.Name)
-	// }
+	root := &p
+	for root.parent != nil {
+		root = root.parent
+	}
+	if p.IsInGoPath() && root != &p {
+		return filepath.Join(root.FQN(), "vendor", p.Name)
+	}
 	if p.Name == "" {
 		return "."
 	}
