@@ -53,7 +53,9 @@ func (p *Pkg) Meta() *build.Package {
 	}
 	m, err := build.Import(p.FQN(), cwd, build.ImportMode(0))
 	if err != nil {
-		Logf("Unable to import package %s with error %s", p.FQN(), err.Error())
+		if _, ok := err.(*build.NoGoError); !ok {
+			Logf("Unable to import package %s with error %s", p.FQN(), err.Error())
+		}
 	}
 	p.meta = m
 	return m
@@ -61,12 +63,8 @@ func (p *Pkg) Meta() *build.Package {
 
 // FQN resolves the fully qualified package name. This is the equivalent to the name that go uses dependant on it's context.
 func (p Pkg) FQN() string {
-	root := &p
-	for root.parent != nil {
-		root = root.parent
-	}
-	if p.IsInGoPath() && root != &p {
-		return filepath.Join(root.FQN(), "vendor", p.Name)
+	if p.IsInGoPath() && !p.IsRoot() {
+		return filepath.Join(p.Root().FQN(), "vendor", p.Name)
 	}
 	if p.Name == "" {
 		return "."
@@ -80,6 +78,11 @@ func (p *Pkg) Root() *Pkg {
 		return p
 	}
 	return p.parent.Root()
+}
+
+// IsRoot returns whether the pkg is the root pkg
+func (p *Pkg) IsRoot() bool {
+	return p.parent == nil
 }
 
 // IsInGoPath returns whether project and all vendored packages are contained in the $GOPATH
@@ -97,15 +100,18 @@ func resolveImportsRecursive(path string, imports []string) []string {
 		if native.IsNative(i) {
 			continue
 		}
-		// check subpackages for dependencies
-		if strings.HasPrefix(i, path) { //  && !strings.HasPrefix(i, filepath.Join(path, "vendor"))
-			m, err := build.Import(i, cwd, build.ImportMode(0))
-			if err != nil {
-				fmt.Println(err.Error())
-			} else {
-				r = append(r, resolveImportsRecursive(i, m.Imports)...)
-			}
+		// Skip vendor packages
+		if !vendoring || strings.Contains(i, "vendor") {
+			continue
 		}
+		// check subpackages for dependencies
+		m, err := build.Import(i, cwd, build.ImportMode(0))
+		if err != nil {
+			// Skip this error. It's is likely the package is not installed yet.
+		} else {
+			r = append(r, resolveImportsRecursive(i, m.Imports)...)
+		}
+		// add base package to deps list
 		name := repoName(i)
 		if name == path {
 			continue
@@ -135,11 +141,6 @@ func (p *Pkg) Init(meta *build.Package) {
 	}
 	p.Unlock()
 
-	// i := resolveImportsRecursive(p.Name, meta.Imports)
-	// js, _ := json.MarshalIndent(i, "", "  ")
-	// fmt.Println(string(js))
-	// os.Exit(0)
-
 	wg := sync.WaitGroup{}
 	for _, i := range resolveImportsRecursive(p.Name, meta.Imports) {
 		name := repoName(i)
@@ -151,20 +152,20 @@ func (p *Pkg) Init(meta *build.Package) {
 		// Reuse packages already added to the project
 		dep := p.Find(name)
 		if dep == nil {
-			fmt.Println("adding", name)
 			dep = NewPkg(name)
 			dep.parent = p
 			p.Lock()
 			p.Dependencies = append(p.Dependencies, dep)
 			p.Unlock()
+
+			wg.Add(1)
+			go func() {
+				dep.Install()
+				wg.Done()
+			}()
 		} else {
 			// check the version compatibility. We might need to create a broken diamond here.
 		}
-		wg.Add(1)
-		go func() {
-			dep.Install()
-			wg.Done()
-		}()
 	}
 	wg.Wait()
 	// p.InstallDeps()
@@ -176,17 +177,14 @@ func (p *Pkg) LoadManifest() error {
 	if len(p.manifestFile) == 0 {
 		p.manifestFile = "vgo.yaml"
 	}
-	fmt.Println("Loading manifest", filepath.Join(p.path, p.manifestFile))
 	data, err := ioutil.ReadFile(filepath.Join(p.path, p.manifestFile))
 	if err != nil {
-		fmt.Println("Unable to load manifest with error", err.Error())
 		return err
 	}
 	p.Lock()
 	err = yaml.Unmarshal(data, p)
 	p.Unlock()
 	if err != nil {
-		fmt.Println("Unable to unmarshal manifest with error", err.Error())
 		return err
 	}
 	p.hasManifest = true
@@ -206,9 +204,7 @@ func (p *Pkg) updateDepsParents() {
 
 // Find looks for a package in it's dependencies or parents dependencies recursively
 func (p Pkg) Find(name string) *Pkg {
-	fmt.Println("find", name)
 	for _, d := range p.Dependencies {
-		fmt.Println("find - check against", d.Name)
 		if (*d).Name == name {
 			return d
 		}
@@ -240,7 +236,6 @@ func (p *Pkg) Install() error {
 	}
 	repo, err := p.VCS()
 	if repo == nil {
-		fmt.Println(err)
 		return fmt.Errorf("Could not resolve repo for %s with error %s", p.Name, err)
 	}
 	p.Lock()
@@ -250,15 +245,11 @@ func (p *Pkg) Install() error {
 		Logf("Installing %s", p.Name)
 		err = repo.Get()
 		if err != nil {
-			Logf("Failed to install %s with error %s", p.Name, err.Error())
+			Logf("Failed to install %s with error %s, %s", p.Name, err.Error(), p.path)
 		}
 	}
 	p.Unlock()
 	p.Checkout()
-	p.LoadManifest()
-	if !p.hasManifest {
-		p.Init(p.Meta())
-	}
 	return err
 }
 
@@ -290,6 +281,11 @@ func (p Pkg) RepoPath() string {
 	return path.Join(dir, p.Name)
 }
 
+// RelativeRepoPath returns the path to package relative to the root package
+func (p Pkg) RelativeRepoPath() string {
+	return strings.TrimPrefix(p.RepoPath(), installPath)
+}
+
 // Checkout switches the package version to the commit nearest maching the Compat string
 func (p *Pkg) Checkout() error {
 	if p.parent == nil {
@@ -300,6 +296,9 @@ func (p *Pkg) Checkout() error {
 	if err != nil {
 		return err
 	}
+	if repo.IsDirty() {
+		Logf("Skipping checkout for %s. Dependency is dirty.", p.Name)
+	}
 	p.Lock()
 	version := p.Version
 	if p.Reference != "" {
@@ -307,24 +306,25 @@ func (p *Pkg) Checkout() error {
 	}
 	p.installed = repo.CheckLocal()
 	if p.installed {
-		if v, err := repo.Version(); err == nil && p.Reference == v {
+		v := string(version)
+		if repo.IsReference(v) {
+			Logf("OK %s", p.Name)
 			p.Unlock()
-			Logf("%s OK %s", p.Reference, p.Name)
 			return nil
 		}
-		err = repo.UpdateVersion(string(version))
+		err = repo.UpdateVersion(v)
 		if err != nil {
 			p.Unlock()
+			Logf("Checkout failed with error %s", err.Error())
 			return err
 		}
 	}
 	p.Reference, err = repo.Version()
 	p.path = repo.LocalPath()
 	p.Unlock()
-	Logf("Switching %s to %s", p.Name, version)
 	p.LoadManifest()
 	if !p.hasManifest {
-		p.Init(p.Meta())
+		p.parent.Init(p.parent.Meta())
 	}
 	return err
 }
@@ -370,6 +370,13 @@ func (p Pkg) RepoURL() string {
 	switch parts[0] {
 	case "github.com":
 		return fmt.Sprintf("git@github.com:%s.git", strings.Join(parts[1:3], "/"))
+	case "golang.org":
+		return fmt.Sprintf("git@github.com:golang/%s.git", parts[2])
+	case "gopkg.in":
+		nameParts := strings.Split(parts[2], ".")
+		name := strings.Join(nameParts[:len(nameParts)-1], ".")
+		p.Version = Version(nameParts[len(nameParts)-1])
+		return fmt.Sprintf("git@github.com:%s/%s.git", parts[1], name)
 	}
 	return ""
 }
@@ -386,6 +393,10 @@ func (p Pkg) RepoType() vcs.Type {
 	parts := strings.Split(p.Name, "/")
 	switch parts[0] {
 	case "github.com":
+		return vcs.Git
+	case "golang.org":
+		return vcs.Git
+	case "gopkg.in":
 		return vcs.Git
 	}
 	return vcs.NoVCS
