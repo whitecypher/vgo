@@ -6,7 +6,6 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
-	"strings"
 
 	"gopkg.in/yaml.v2"
 
@@ -30,20 +29,20 @@ func main() {
 
 	verbose = true
 
-	p := NewPkg(".")
+	r := NewRepo(".", cwd)
 	vgo := cli.App("vgo", "Installs the dependencies listed in the manifest at the designated reference point.\nIf no manifest exists, `go in` is implied and run automatically to build dependencies and install them.")
 	dry := vgo.BoolOpt("dry", false, "Prevent updates to manifest for trial runs")
 	_ = dry
 	vgo.Version("v version", version)
 	vgo.Spec = "[--dry]"
 	vgo.Before = func() {
-		p.LoadManifest()
+		r.LoadManifest()
 	}
 	vgo.After = func() {
 		if !*dry {
-			p.SaveManifest()
+			r.SaveManifest()
 		} else {
-			data, err := yaml.Marshal(p)
+			data, err := yaml.Marshal(r)
 			if err != nil {
 				fmt.Println(err.Error())
 			}
@@ -51,7 +50,7 @@ func main() {
 		}
 	}
 	vgo.Action = func() {
-		if !p.hasManifest {
+		if !r.hasManifest {
 			// defer to vgo in
 			args := os.Args[1:]
 			args = append(args, "in")
@@ -62,7 +61,7 @@ func main() {
 			cmd.Run()
 		} else {
 			// just install what's in the manifest
-			p.InstallDeps()
+			r.InstallDeps()
 		}
 
 		// pass command through to go - need to find another way to do this
@@ -83,8 +82,7 @@ func main() {
 		"Scans your project to create/update a manifest of all automatically resolved dependencies",
 		func(cmd *cli.Cmd) {
 			cmd.Action = func() {
-				m := p.Meta()
-				p.Init(m)
+				r.Init()
 			}
 		},
 	)
@@ -112,25 +110,4 @@ func main() {
 	)
 
 	vgo.Run(os.Args)
-}
-
-func repoName(name string) string {
-	// Remove any vendor path prefixes
-	vendorParts := strings.Split(name, "/vendor/")
-	name = vendorParts[len(vendorParts)-1]
-	// Limit root package name to 3 levels
-	parts := strings.Split(name, "/")
-	if len(parts) > 3 {
-		parts = parts[0:3]
-	}
-	return strings.Join(parts, "/")
-}
-
-// MustGetwd handles the error returned by Getwd or returns the returns the resulting current working directory path.
-func MustGetwd(cwd string, err error) string {
-	if err != nil {
-		fmt.Println(err.Error())
-		os.Exit(1)
-	}
-	return cwd
 }
