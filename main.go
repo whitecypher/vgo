@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
 
@@ -32,7 +31,6 @@ func main() {
 	r := NewRepo(".", cwd)
 	vgo := cli.App("vgo", "Installs the dependencies listed in the manifest at the designated reference point.\nIf no manifest exists, `go in` is implied and run automatically to build dependencies and install them.")
 	dry := vgo.BoolOpt("dry", false, "Prevent updates to manifest for trial runs")
-	_ = dry
 	vgo.Version("v version", version)
 	vgo.Spec = "[--dry]"
 	vgo.Before = func() {
@@ -51,18 +49,11 @@ func main() {
 	}
 	vgo.Action = func() {
 		if !r.hasManifest {
-			// defer to vgo in
-			args := os.Args[1:]
-			args = append(args, "in")
-			cmd := exec.Command("vgo", args...)
-			cmd.Stdout = os.Stdout
-			cmd.Stdin = os.Stdin
-			cmd.Stderr = os.Stderr
-			cmd.Run()
-		} else {
-			// just install what's in the manifest
-			r.InstallDeps()
+			p := NewPkg(r.FQN(), r.path)
+			p.Print(os.Stdout, "  ")
+			p.MapDeps(PackageRepoMapper)
 		}
+		r.InstallDeps()
 
 		// pass command through to go - need to find another way to do this
 		// if len(os.Args) > 1 {
@@ -82,7 +73,10 @@ func main() {
 		"Scans your project to create/update a manifest of all automatically resolved dependencies",
 		func(cmd *cli.Cmd) {
 			cmd.Action = func() {
-				r.Init()
+				p := NewPkg(r.FQN(), r.path)
+				p.Print(os.Stdout, "  ")
+				p.MapDeps(PackageRepoMapper)
+				r.InstallDeps()
 			}
 		},
 	)

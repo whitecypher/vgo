@@ -2,27 +2,10 @@ package main
 
 import (
 	"fmt"
-	"go/build"
 	"os"
-	"sort"
-	"strings"
 
 	"github.com/Masterminds/vcs"
-	"github.com/whitecypher/vgo/lib/native"
 )
-
-// RepoName extracts the repository name from a package name
-func RepoName(packageName string) string {
-	// Remove any vendor path prefixes
-	vendorParts := strings.Split(packageName, "/vendor/")
-	name := vendorParts[len(vendorParts)-1]
-	// Limit root package name to 3 levels
-	parts := strings.Split(name, "/")
-	if len(parts) > 3 {
-		parts = parts[0:3]
-	}
-	return strings.Join(parts, "/")
-}
 
 // MustGetwd handles the error returned by Getwd or returns the returns the resulting current working directory path.
 func MustGetwd(cwd string, err error) string {
@@ -31,6 +14,18 @@ func MustGetwd(cwd string, err error) string {
 		os.Exit(1)
 	}
 	return cwd
+}
+
+// PackageRepoMapper maps packages to repositories
+func PackageRepoMapper(p *Pkg, d *Pkg) {
+	pr := NewRepo(p.RepoName(), p.Dir)
+	pr.UsedPkgs = append(pr.UsedPkgs, d)
+	if p.RepoName() == d.RepoName() {
+		return
+	}
+	dr := NewRepo(d.RepoName(), d.Dir)
+	pr.AddDep(dr)
+	dr.parent = pr
 }
 
 // repoFromPath attempts to resolve the vcs.Repo from any of the given paths in sequence.
@@ -57,43 +52,4 @@ func repoFromPath(paths ...string) vcs.Repo {
 		return repo
 	}
 	return nil
-}
-
-func resolveImportsRecursive(path string, imports []string) []string {
-	r := []string{}
-	for _, i := range imports {
-		// Skip native packages
-		if native.IsNative(i) {
-			continue
-		}
-		// Skip vendor packages
-		if !vendoring || strings.Contains(i, "vendor") {
-			continue
-		}
-		// check subpackages for dependencies
-		m, err := build.Import(i, cwd, build.ImportMode(0))
-		if err != nil {
-			// Skip this error. It's is likely the package is not installed yet.
-		} else {
-			r = append(r, resolveImportsRecursive(i, m.Imports)...)
-		}
-		// add base package to deps list
-		name := RepoName(i)
-		if name == path {
-			continue
-		}
-		r = append(r, name)
-	}
-	// return only unique imports
-	u := []string{}
-	m := map[string]bool{}
-	for _, i := range r {
-		if _, ok := m[i]; ok {
-			continue
-		}
-		m[i] = true
-		u = append(u, i)
-	}
-	sort.Strings(u)
-	return u
 }

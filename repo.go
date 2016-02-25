@@ -13,15 +13,22 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+var repos = make(map[string]*Repo)
+
 // Version compatibility string e.g. "~1.0.0" or "1.*"
 type Version string
 
 // NewRepo creates and initializes a Repo
 func NewRepo(name string, path string) *Repo {
-	return &Repo{
+	if r, ok := repos[name]; ok {
+		return r
+	}
+	r := &Repo{
 		Name: name,
 		path: path,
 	}
+	repos[name] = r
+	return r
 }
 
 // Repo ...
@@ -35,139 +42,116 @@ type Repo struct {
 	manifestFile string         `yaml:"-"`
 	installed    bool           `yaml:"-"`
 	path         string         `yaml:"-"`
-	pkg          *Pkg           `yaml:"-"`
 
 	Name         string  `yaml:"name,omitempty"`
 	Version      Version `yaml:"ver,omitempty"`
 	Reference    string  `yaml:"ref,omitempty"`
 	Dependencies []*Repo `yaml:"deps,omitempty"`
 	URL          string  `yaml:"url,omitempty"`
+	UsedPkgs     Pkgs    `yaml:"-"`
+}
+
+// HasDep checks for the existence of a dependancy
+func (r *Repo) HasDep(dep *Repo) bool {
+	for _, d := range r.Dependencies {
+		if d == dep {
+			return true
+		}
+	}
+	return false
+}
+
+// AddDep ...
+func (r *Repo) AddDep(dep *Repo) {
+	if r.HasDep(dep) {
+		return
+	}
+	r.Dependencies = append(r.Dependencies, dep)
 }
 
 // FQN resolves the fully qualified package name. This is the equivalent to the name that go uses dependant on it's context.
-func (p *Repo) FQN() string {
-	if p.IsInGoPath() && !p.IsRoot() {
-		return filepath.Join(p.Root().FQN(), "vendor", p.Name)
+func (r *Repo) FQN() string {
+	if r.IsInGoPath() && !r.IsRoot() {
+		return filepath.Join(r.Root().FQN(), "vendor", r.Name)
 	}
-	if p.Name == "" {
+	if r.Name == "" {
 		return "."
 	}
-	return p.Name
+	return r.Name
 }
 
 // Root returns the topmost package (typically this is the application package)
-func (p *Repo) Root() *Repo {
-	if p.parent == nil {
-		return p
+func (r *Repo) Root() *Repo {
+	if r.parent == nil {
+		return r
 	}
-	return p.parent.Root()
+	return r.parent.Root()
 }
 
 // IsRoot returns whether the pkg is the root pkg
-func (p *Repo) IsRoot() bool {
-	return p.parent == nil
+func (r *Repo) IsRoot() bool {
+	return r.parent == nil
 }
 
 // IsInGoPath returns whether project and all vendored packages are contained in the $GOPATH
-func (p *Repo) IsInGoPath() bool {
-	if p.parent != nil {
-		return p.parent.IsInGoPath()
+func (r *Repo) IsInGoPath() bool {
+	if r.parent != nil {
+		return r.parent.IsInGoPath()
 	}
-	return strings.HasPrefix(p.path, gosrcpath)
-}
-
-// Init ...
-func (p *Repo) Init() {
-	p.pkg = NewPkg(p.FQN(), p.path)
-	p.pkg.Print(os.Stdout)
-	// p.Lock()
-	// p.path = meta.Dir
-	// if p.IsInGoPath() {
-	// 	p.Name = repoName(meta.ImportPath)
-	// }
-	// p.Unlock()
-	//
-	// wg := sync.WaitGroup{}
-	// for _, i := range resolveImportsRecursive(p.Name, meta.Imports) {
-	// 	name := repoName(i)
-	// 	// Skip subpackages
-	// 	if strings.HasPrefix(name, p.Name) {
-	// 		continue
-	// 	}
-	//
-	// 	// Reuse packages already added to the project
-	// 	dep := p.Find(name)
-	// 	if dep == nil {
-	// 		dep = NewRepo(name)
-	// 		dep.parent = p
-	// 		p.Lock()
-	// 		p.Dependencies = append(p.Dependencies, dep)
-	// 		p.Unlock()
-	//
-	// 		wg.Add(1)
-	// 		go func() {
-	// 			dep.Install()
-	// 			wg.Done()
-	// 		}()
-	// 	} else {
-	// 		// check the version compatibility. We might need to create a broken diamond here.
-	// 	}
-	// }
-	// wg.Wait()
-	// p.InstallDeps()
+	return strings.HasPrefix(r.path, gosrcpath)
 }
 
 // LoadManifest ...
-func (p *Repo) LoadManifest() error {
-	p.hasManifest = false
-	if len(p.manifestFile) == 0 {
-		p.manifestFile = "vgo.yaml"
+func (r *Repo) LoadManifest() error {
+	r.hasManifest = false
+	if len(r.manifestFile) == 0 {
+		r.manifestFile = "vgo.yaml"
 	}
-	data, err := ioutil.ReadFile(filepath.Join(p.path, p.manifestFile))
+	data, err := ioutil.ReadFile(filepath.Join(r.path, r.manifestFile))
 	if err != nil {
 		return err
 	}
-	p.Lock()
-	err = yaml.Unmarshal(data, p)
-	p.Unlock()
+	r.Lock()
+	err = yaml.Unmarshal(data, r)
+	r.Unlock()
 	if err != nil {
 		return err
 	}
-	p.hasManifest = true
-	p.updateDepsParents()
+	r.hasManifest = true
+	r.updateDepsParents()
 	return nil
 }
 
 // updateDepsParents resolves the parent (caller) pkg for all dependencies recursively
-func (p *Repo) updateDepsParents() {
-	for _, d := range p.Dependencies {
+func (r *Repo) updateDepsParents() {
+	for _, d := range r.Dependencies {
 		d.Lock()
-		d.parent = p
+		d.parent = r
 		d.Unlock()
 		d.updateDepsParents()
 	}
 }
 
 // Find looks for a package in it's dependencies or parents dependencies recursively
-func (p *Repo) Find(name string) *Repo {
-	for _, d := range p.Dependencies {
+func (r *Repo) Find(name string) *Repo {
+	for _, d := range r.Dependencies {
 		if (*d).Name == name {
 			return d
 		}
 	}
-	if p.parent != nil {
-		return (*p.parent).Find(name)
+	if r.parent != nil {
+		return (*r.parent).Find(name)
 	}
 	return nil
 }
 
 // SaveManifest ...
-func (p *Repo) SaveManifest() error {
-	data, err := yaml.Marshal(p)
+func (r *Repo) SaveManifest() error {
+	data, err := yaml.Marshal(r)
 	if err != nil {
 		return err
 	}
-	err = ioutil.WriteFile(filepath.Join(p.path, p.manifestFile), data, os.FileMode(0644))
+	err = ioutil.WriteFile(filepath.Join(r.path, r.manifestFile), data, os.FileMode(0644))
 	if err != nil {
 		return err
 	}
@@ -175,34 +159,34 @@ func (p *Repo) SaveManifest() error {
 }
 
 // Install the package
-func (p *Repo) Install() error {
-	if p.parent == nil {
+func (r *Repo) Install() error {
+	if r.parent == nil {
 		// don't touch the current working directory
 		return nil
 	}
-	repo, err := p.VCS()
+	repo, err := r.VCS()
 	if repo == nil {
-		return fmt.Errorf("Could not resolve repo for %s with error %s", p.Name, err)
+		return fmt.Errorf("Could not resolve repo for %s with error %s", r.Name, err)
 	}
-	p.Lock()
-	p.installed = repo.CheckLocal()
-	p.path = repo.LocalPath()
-	if !p.installed {
-		Logf("Installing %s", p.Name)
+	r.Lock()
+	r.installed = repo.CheckLocal()
+	r.path = repo.LocalPath()
+	if !r.installed {
+		Logf("Installing %s", r.Name)
 		err = repo.Get()
 		if err != nil {
-			Logf("Failed to install %s with error %s, %s", p.Name, err.Error(), p.path)
+			Logf("Failed to install %s with error %s, %s", r.Name, err.Error(), r.path)
 		}
 	}
-	p.Unlock()
-	p.Checkout()
+	r.Unlock()
+	r.Checkout()
 	return err
 }
 
 // InstallDeps install package dependencies
-func (p *Repo) InstallDeps() (err error) {
+func (r *Repo) InstallDeps() (err error) {
 	wg := sync.WaitGroup{}
-	for _, dep := range p.Dependencies {
+	for _, dep := range r.Dependencies {
 		d := dep
 		wg.Add(1)
 		go func() {
@@ -212,71 +196,72 @@ func (p *Repo) InstallDeps() (err error) {
 			}
 			wg.Done()
 		}()
-
 	}
 	wg.Wait()
 	return
 }
 
-// RelativePath returns the path to package relative to the root package
-func (p *Repo) RelPath() string {
-	return strings.TrimPrefix(cwd, p.path)
+// RelPath returns the path to package relative to the root package
+func (r *Repo) RelPath() string {
+	return strings.TrimPrefix(cwd, r.path)
 }
 
 // Checkout switches the package version to the commit nearest maching the Compat string
-func (p *Repo) Checkout() error {
-	if p.parent == nil {
+func (r *Repo) Checkout() error {
+	if r.parent == nil {
 		// don't touch the current working directory
 		return nil
 	}
-	repo, err := p.VCS()
+	repo, err := r.VCS()
 	if err != nil {
 		return err
 	}
 	if repo.IsDirty() {
-		Logf("Skipping checkout for %s. Dependency is dirty.", p.Name)
+		Logf("Skipping checkout for %s. Dependency is dirty.", r.Name)
 	}
-	p.Lock()
-	version := p.Version
-	if p.Reference != "" {
-		version = Version(p.Reference)
+	r.Lock()
+	version := r.Version
+	if r.Reference != "" {
+		version = Version(r.Reference)
 	}
-	p.installed = repo.CheckLocal()
-	if p.installed {
+	r.installed = repo.CheckLocal()
+	if r.installed {
 		v := string(version)
 		if repo.IsReference(v) {
-			Logf("OK %s", p.Name)
-			p.Unlock()
+			Logf("OK %s", r.Name)
+			r.Unlock()
 			return nil
 		}
 		err = repo.UpdateVersion(v)
 		if err != nil {
-			p.Unlock()
+			r.Unlock()
 			Logf("Checkout failed with error %s", err.Error())
 			return err
 		}
 	}
-	p.Reference, err = repo.Version()
-	p.path = repo.LocalPath()
-	p.Unlock()
-	p.LoadManifest()
-	if !p.hasManifest {
-		p.parent.Init()
+	r.Reference, err = repo.Version()
+	r.path = repo.LocalPath()
+	r.Unlock()
+	r.LoadManifest()
+	if !r.hasManifest {
+		r.UsedPkgs.Init()
+		r.UsedPkgs.MapDeps(PackageRepoMapper)
 	}
+	r.InstallDeps()
 	return err
 }
 
 // VCS resolves the vcs.Repo for the Repo
-func (p *Repo) VCS() (repo vcs.Repo, err error) {
-	p.Lock()
-	defer p.Unlock()
-	if p.repo != nil {
-		repo = p.repo
+func (r *Repo) VCS() (repo vcs.Repo, err error) {
+	r.Lock()
+	defer r.Unlock()
+	if r.repo != nil {
+		repo = r.repo
 		return
 	}
-	repoType := p.RepoType()
-	repoURL := p.RepoURL()
-	repoPath := p.path
+	repoType := r.RepoType()
+	repoURL := r.RepoURL()
+	repoPath := r.path
 	switch repoType {
 	case vcs.Git:
 		repo, err = vcs.NewGitRepo(repoURL, repoPath)
@@ -287,23 +272,23 @@ func (p *Repo) VCS() (repo vcs.Repo, err error) {
 	case vcs.Svn:
 		repo, err = vcs.NewSvnRepo(repoURL, repoPath)
 	}
-	p.repo = repo
+	r.repo = repo
 	return
 }
 
 // RepoURL creates the repo url from the package import path
-func (p *Repo) RepoURL() string {
-	if p.URL != "" {
-		return p.URL
+func (r *Repo) RepoURL() string {
+	if r.URL != "" {
+		return r.URL
 	}
 	// If it's already installed in vendor or gopath, grab the url from there
-	repo := repoFromPath(p.path, filepath.Join(gopath, "src", p.Name))
+	repo := repoFromPath(r.path, filepath.Join(gopath, "src", r.Name))
 	if repo != nil {
 		return repo.Remote()
 	}
 	// Fallback to resolving the path from the package import path
 	// Add more cases as needed/requested
-	parts := strings.Split(p.Name, "/")
+	parts := strings.Split(r.Name, "/")
 	switch parts[0] {
 	case "github.com":
 		return fmt.Sprintf("git@github.com:%s.git", strings.Join(parts[1:3], "/"))
@@ -312,22 +297,22 @@ func (p *Repo) RepoURL() string {
 	case "gopkg.in":
 		nameParts := strings.Split(parts[2], ".")
 		name := strings.Join(nameParts[:len(nameParts)-1], ".")
-		p.Version = Version(nameParts[len(nameParts)-1])
+		r.Version = Version(nameParts[len(nameParts)-1])
 		return fmt.Sprintf("git@github.com:%s/%s.git", parts[1], name)
 	}
 	return ""
 }
 
 // RepoType attempts to resolve the repository type of the package by it's name
-func (p *Repo) RepoType() vcs.Type {
+func (r *Repo) RepoType() vcs.Type {
 	// If it's already installed in vendor or gopath, grab the type from there
-	repo := repoFromPath(p.path, filepath.Join(p.path, "vendor", p.Name), filepath.Join(gopath, "src", p.Name))
+	repo := repoFromPath(r.path, filepath.Join(r.path, "vendor", r.Name), filepath.Join(gopath, "src", r.Name))
 	if repo != nil {
 		return repo.Vcs()
 	}
 	// Fallback to resolving the type from the package import path
 	// Add more cases as needed/requested
-	parts := strings.Split(p.Name, "/")
+	parts := strings.Split(r.Name, "/")
 	switch parts[0] {
 	case "github.com":
 		return vcs.Git
@@ -340,10 +325,13 @@ func (p *Repo) RepoType() vcs.Type {
 }
 
 // MarshalYAML implements yaml.Marsheler to prevent duplicate storage of nested packages with vgo.yaml
-func (p *Repo) MarshalYAML() (interface{}, error) {
-	p.RLock()
-	copy := *p
-	p.RUnlock()
+func (r *Repo) MarshalYAML() (interface{}, error) {
+	r.RLock()
+	copy := *r
+	r.RUnlock()
+	if copy.Name == "." {
+		copy.Name = ""
+	}
 	if copy.hasManifest && copy.parent != nil {
 		copy.Dependencies = []*Repo{}
 	}
