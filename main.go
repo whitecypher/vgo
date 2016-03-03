@@ -5,6 +5,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v2"
 
@@ -18,6 +19,7 @@ var (
 	cwd          = MustGetwd(os.Getwd())
 	manifestPath = cwd
 	vendoring    = os.Getenv("GO15VENDOREXPERIMENT") == "1"
+	ingopath     = strings.HasPrefix(cwd, gosrcpath)
 	version      = "0.0.0"
 )
 
@@ -28,7 +30,7 @@ func main() {
 
 	verbose = true
 
-	r := NewRepo(".", cwd)
+	r := NewRepo(".", nil)
 	vgo := cli.App("vgo", "Installs the dependencies listed in the manifest at the designated reference point.\nIf no manifest exists, `go in` is implied and run automatically to build dependencies and install them.")
 	dry := vgo.BoolOpt("dry", false, "Prevent updates to manifest for trial runs")
 	vgo.Version("v version", version)
@@ -38,8 +40,12 @@ func main() {
 	}
 	vgo.After = func() {
 		if !*dry {
-			r.SaveManifest()
+			err := r.SaveManifest()
+			if err != nil {
+				fmt.Println(err.Error())
+			}
 		} else {
+			// r.Print("  ", os.Stdout)
 			data, err := yaml.Marshal(r)
 			if err != nil {
 				fmt.Println(err.Error())
@@ -48,13 +54,12 @@ func main() {
 		}
 	}
 	vgo.Action = func() {
-		if !r.hasManifest {
-			p := NewPkg(r.FQN(), r.path)
-			p.Print(os.Stdout, "  ")
-			p.MapDeps(PackageRepoMapper)
+		if r.hasManifest {
+			r.InstallDeps()
+			return
 		}
-		r.InstallDeps()
-
+		p := NewPkg(".", cwd, nil)
+		r = p.Repo
 		// pass command through to go - need to find another way to do this
 		// if len(os.Args) > 1 {
 		// 	args := os.Args[1:]
@@ -73,10 +78,9 @@ func main() {
 		"Scans your project to create/update a manifest of all automatically resolved dependencies",
 		func(cmd *cli.Cmd) {
 			cmd.Action = func() {
-				p := NewPkg(r.FQN(), r.path)
-				p.Print(os.Stdout, "  ")
-				p.MapDeps(PackageRepoMapper)
-				r.InstallDeps()
+				_ = NewPkg(".", cwd, nil)
+				p := NewPkg(".", cwd, nil)
+				r = p.Repo
 			}
 		},
 	)

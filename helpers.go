@@ -17,16 +17,17 @@ func MustGetwd(cwd string, err error) string {
 }
 
 // PackageRepoMapper maps packages to repositories
-func PackageRepoMapper(p *Pkg, d *Pkg) {
-	pr := NewRepo(p.RepoName(), p.Dir)
-	pr.UsedPkgs = append(pr.UsedPkgs, d)
-	if p.RepoName() == d.RepoName() {
-		return
-	}
-	dr := NewRepo(d.RepoName(), d.Dir)
-	pr.AddDep(dr)
-	dr.parent = pr
-}
+// func PackageRepoMapper(p *Pkg, d *Pkg) {
+// 	pr := NewRepo(p.RepoName())
+// 	if p.RepoName() == d.RepoName() {
+// 		return
+// 	}
+// 	dr := NewRepo(d.RepoName())
+// 	dr.UsedPkgs = append(dr.UsedPkgs, d)
+// 	// Check compatibility and create a broken diamond if needed
+// 	pr.Root().AddDep(dr)
+// 	dr.parent = pr
+// }
 
 // repoFromPath attempts to resolve the vcs.Repo from any of the given paths in sequence.
 func repoFromPath(paths ...string) vcs.Repo {

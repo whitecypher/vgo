@@ -3,8 +3,10 @@ package main
 import (
 	"fmt"
 	"go/build"
+	"io"
 	"io/ioutil"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -19,15 +21,17 @@ var repos = make(map[string]*Repo)
 type Version string
 
 // NewRepo creates and initializes a Repo
-func NewRepo(name string, path string) *Repo {
+func NewRepo(name string, parent *Repo) *Repo {
 	if r, ok := repos[name]; ok {
 		return r
 	}
 	r := &Repo{
-		Name: name,
-		path: path,
+		parent:       parent,
+		Name:         name,
+		manifestFile: "vgo.yaml",
 	}
 	repos[name] = r
+	r.Install()
 	return r
 }
 
@@ -41,14 +45,13 @@ type Repo struct {
 	hasManifest  bool           `yaml:"-"`
 	manifestFile string         `yaml:"-"`
 	installed    bool           `yaml:"-"`
-	path         string         `yaml:"-"`
 
 	Name         string  `yaml:"name,omitempty"`
 	Version      Version `yaml:"ver,omitempty"`
 	Reference    string  `yaml:"ref,omitempty"`
 	Dependencies []*Repo `yaml:"deps,omitempty"`
 	URL          string  `yaml:"url,omitempty"`
-	UsedPkgs     Pkgs    `yaml:"-"`
+	// UsedPkgs     Pkgs    `yaml:"-"`
 }
 
 // HasDep checks for the existence of a dependancy
@@ -67,6 +70,14 @@ func (r *Repo) AddDep(dep *Repo) {
 		return
 	}
 	r.Dependencies = append(r.Dependencies, dep)
+}
+
+// Path calculates the install path for the repository
+func (r *Repo) Path() string {
+	if r.parent == nil {
+		return cwd
+	}
+	return path.Join(r.parent.Path(), "vendor", r.Name)
 }
 
 // FQN resolves the fully qualified package name. This is the equivalent to the name that go uses dependant on it's context.
@@ -98,16 +109,13 @@ func (r *Repo) IsInGoPath() bool {
 	if r.parent != nil {
 		return r.parent.IsInGoPath()
 	}
-	return strings.HasPrefix(r.path, gosrcpath)
+	return strings.HasPrefix(r.Path(), gosrcpath)
 }
 
 // LoadManifest ...
 func (r *Repo) LoadManifest() error {
 	r.hasManifest = false
-	if len(r.manifestFile) == 0 {
-		r.manifestFile = "vgo.yaml"
-	}
-	data, err := ioutil.ReadFile(filepath.Join(r.path, r.manifestFile))
+	data, err := ioutil.ReadFile(filepath.Join(r.Path(), r.manifestFile))
 	if err != nil {
 		return err
 	}
@@ -151,7 +159,7 @@ func (r *Repo) SaveManifest() error {
 	if err != nil {
 		return err
 	}
-	err = ioutil.WriteFile(filepath.Join(r.path, r.manifestFile), data, os.FileMode(0644))
+	err = ioutil.WriteFile(filepath.Join(r.Path(), r.manifestFile), data, os.FileMode(0644))
 	if err != nil {
 		return err
 	}
@@ -168,18 +176,15 @@ func (r *Repo) Install() error {
 	if repo == nil {
 		return fmt.Errorf("Could not resolve repo for %s with error %s", r.Name, err)
 	}
-	r.Lock()
 	r.installed = repo.CheckLocal()
-	r.path = repo.LocalPath()
 	if !r.installed {
 		Logf("Installing %s", r.Name)
 		err = repo.Get()
 		if err != nil {
-			Logf("Failed to install %s with error %s, %s", r.Name, err.Error(), r.path)
+			Logf("Failed to install %s with error %s, %s", r.Name, err.Error(), r.Path())
 		}
 	}
-	r.Unlock()
-	r.Checkout()
+	r.Checkout(false)
 	return err
 }
 
@@ -189,13 +194,13 @@ func (r *Repo) InstallDeps() (err error) {
 	for _, dep := range r.Dependencies {
 		d := dep
 		wg.Add(1)
-		go func() {
-			err = d.Install()
-			if err != nil {
-				Logf("Package %s could not be installed with error", err.Error())
-			}
-			wg.Done()
-		}()
+		// go func() {
+		err = d.Install()
+		if err != nil {
+			Logf("Package %s could not be installed with error", err.Error())
+		}
+		wg.Done()
+		// }()
 	}
 	wg.Wait()
 	return
@@ -203,11 +208,11 @@ func (r *Repo) InstallDeps() (err error) {
 
 // RelPath returns the path to package relative to the root package
 func (r *Repo) RelPath() string {
-	return strings.TrimPrefix(cwd, r.path)
+	return strings.TrimPrefix(cwd, r.Path())
 }
 
 // Checkout switches the package version to the commit nearest maching the Compat string
-func (r *Repo) Checkout() error {
+func (r *Repo) Checkout(update bool) error {
 	if r.parent == nil {
 		// don't touch the current working directory
 		return nil
@@ -220,33 +225,36 @@ func (r *Repo) Checkout() error {
 		Logf("Skipping checkout for %s. Dependency is dirty.", r.Name)
 	}
 	r.Lock()
+	defer r.Unlock()
 	version := r.Version
 	if r.Reference != "" {
 		version = Version(r.Reference)
 	}
 	r.installed = repo.CheckLocal()
-	if r.installed {
-		v := string(version)
-		if repo.IsReference(v) {
-			Logf("OK %s", r.Name)
-			r.Unlock()
-			return nil
-		}
-		err = repo.UpdateVersion(v)
+	if !r.installed {
+		Logf("Dependency %s not installed", r.Name)
+		return fmt.Errorf("Dependency %s not installed", r.Name)
+	}
+	v := string(version)
+	if len(v) > 0 && !repo.IsReference(v) {
+		Logf("Version %s not found for dependency %s", v, r.Name)
+		return fmt.Errorf("Version %s not found for dependency %s", v, r.Name)
+	}
+	err = repo.UpdateVersion(v)
+	if err != nil {
+		Logf("Checkout failed with error %s", err.Error())
+		return err
+	}
+	if update {
+		err = repo.Update()
 		if err != nil {
-			r.Unlock()
 			Logf("Checkout failed with error %s", err.Error())
 			return err
 		}
 	}
 	r.Reference, err = repo.Version()
-	r.path = repo.LocalPath()
-	r.Unlock()
+	Logf("OK %s %s", r.Reference, r.Name)
 	r.LoadManifest()
-	if !r.hasManifest {
-		r.UsedPkgs.Init()
-		r.UsedPkgs.MapDeps(PackageRepoMapper)
-	}
 	r.InstallDeps()
 	return err
 }
@@ -261,7 +269,7 @@ func (r *Repo) VCS() (repo vcs.Repo, err error) {
 	}
 	repoType := r.RepoType()
 	repoURL := r.RepoURL()
-	repoPath := r.path
+	repoPath := r.Path()
 	switch repoType {
 	case vcs.Git:
 		repo, err = vcs.NewGitRepo(repoURL, repoPath)
@@ -276,13 +284,27 @@ func (r *Repo) VCS() (repo vcs.Repo, err error) {
 	return
 }
 
+// PathOptions returns a list of possible locations to find the repo
+func (r *Repo) PathOptions() []string {
+	pathOptions := []string{r.Path()}
+	pathOptions = append(pathOptions, filepath.Join(r.Path(), "vendor", r.Name))
+	parent := r.parent
+	// Climb tree to find possible parent vendor dirs
+	for parent != nil {
+		pathOptions = append(pathOptions, filepath.Join(parent.Path(), "vendor", r.Name))
+		parent = parent.parent
+	}
+	pathOptions = append(pathOptions, filepath.Join(gopath, "src", r.Name))
+	return pathOptions
+}
+
 // RepoURL creates the repo url from the package import path
 func (r *Repo) RepoURL() string {
 	if r.URL != "" {
 		return r.URL
 	}
 	// If it's already installed in vendor or gopath, grab the url from there
-	repo := repoFromPath(r.path, filepath.Join(gopath, "src", r.Name))
+	repo := repoFromPath(r.PathOptions()...)
 	if repo != nil {
 		return repo.Remote()
 	}
@@ -306,7 +328,7 @@ func (r *Repo) RepoURL() string {
 // RepoType attempts to resolve the repository type of the package by it's name
 func (r *Repo) RepoType() vcs.Type {
 	// If it's already installed in vendor or gopath, grab the type from there
-	repo := repoFromPath(r.path, filepath.Join(r.path, "vendor", r.Name), filepath.Join(gopath, "src", r.Name))
+	repo := repoFromPath(r.PathOptions()...)
 	if repo != nil {
 		return repo.Vcs()
 	}
@@ -336,4 +358,16 @@ func (r *Repo) MarshalYAML() (interface{}, error) {
 		copy.Dependencies = []*Repo{}
 	}
 	return copy, nil
+}
+
+// Print ...
+func (r *Repo) Print(indent string, w io.Writer) {
+	r.print(indent, 0, w)
+}
+
+func (r *Repo) print(indent string, depth int, w io.Writer) {
+	w.Write([]byte(strings.Repeat(indent, depth) + r.Name + "\n"))
+	for _, d := range r.Dependencies {
+		d.print(indent, depth+1, w)
+	}
 }

@@ -1,0 +1,8 @@
+name: github.com/whitecypher/vgo
+deps:
+- name: github.com/Masterminds/vcs
+  ref: 9c0db6583837118d5df7c2ae38ab1c194e434b35
+- name: github.com/jawher/mow.cli
+  ref: 772320464101e904cd51198160eb4d489be9cc49
+- name: gopkg.in/yaml.v2
+  ref: f7716cbe52baa25d2e9b0d0da546fcf909fc16b4
