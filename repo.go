@@ -77,7 +77,8 @@ func (r *Repo) Path() string {
 	if r.parent == nil {
 		return cwd
 	}
-	return path.Join(r.parent.Path(), "vendor", r.Name)
+	return path.Join(cwd, "vendor", r.Name)
+	// return path.Join(r.parent.Path(), "vendor", r.Name)
 }
 
 // FQN resolves the fully qualified package name. This is the equivalent to the name that go uses dependant on it's context.
@@ -127,6 +128,7 @@ func (r *Repo) LoadManifest() error {
 	}
 	r.hasManifest = true
 	r.updateDepsParents()
+	r.updateMap()
 	return nil
 }
 
@@ -137,6 +139,16 @@ func (r *Repo) updateDepsParents() {
 		d.parent = r
 		d.Unlock()
 		d.updateDepsParents()
+	}
+}
+
+// updateMap ...
+func (r *Repo) updateMap() {
+	if _, ok := repos[r.Name]; !ok {
+		repos[r.Name] = r
+	}
+	for _, d := range r.Dependencies {
+		d.updateMap()
 	}
 }
 
@@ -236,19 +248,21 @@ func (r *Repo) Checkout(update bool) error {
 		return fmt.Errorf("Dependency %s not installed", r.Name)
 	}
 	v := string(version)
-	if len(v) > 0 && !repo.IsReference(v) {
-		Logf("Version %s not found for dependency %s", v, r.Name)
-		return fmt.Errorf("Version %s not found for dependency %s", v, r.Name)
-	}
-	err = repo.UpdateVersion(v)
-	if err != nil {
-		Logf("Checkout failed with error %s", err.Error())
-		return err
+	if len(v) > 0 {
+		if repo.IsReference(v) {
+			err = repo.UpdateVersion(v)
+			if err != nil {
+				Logf("Checkout failed with error %s", err.Error())
+				return err
+			}
+		} else {
+			Logf("Reference %s not found for dependency %s", v, r.Name)
+		}
 	}
 	if update {
 		err = repo.Update()
 		if err != nil {
-			Logf("Checkout failed with error %s", err.Error())
+			Logf("Update failed with error %s", err.Error())
 			return err
 		}
 	}
