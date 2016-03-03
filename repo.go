@@ -81,6 +81,13 @@ func (r *Repo) Path() string {
 	// return path.Join(r.parent.Path(), "vendor", r.Name)
 }
 
+func (r *Repo) Depth() int {
+	if r.parent == nil {
+		return 0
+	}
+	return r.parent.Depth() + 1
+}
+
 // FQN resolves the fully qualified package name. This is the equivalent to the name that go uses dependant on it's context.
 func (r *Repo) FQN() string {
 	if r.IsInGoPath() && !r.IsRoot() {
@@ -181,6 +188,7 @@ func (r *Repo) SaveManifest() error {
 // Install the package
 func (r *Repo) Install() error {
 	if r.parent == nil {
+		Logf(strings.Repeat("  ", r.Depth())+"NOOP Skipping project root %s", r.Name)
 		// don't touch the current working directory
 		return nil
 	}
@@ -226,6 +234,7 @@ func (r *Repo) RelPath() string {
 // Checkout switches the package version to the commit nearest maching the Compat string
 func (r *Repo) Checkout(update bool) error {
 	if r.parent == nil {
+		Logf(strings.Repeat("  ", r.Depth())+"NOOP Skipping project root %s", r.Name)
 		// don't touch the current working directory
 		return nil
 	}
@@ -234,7 +243,7 @@ func (r *Repo) Checkout(update bool) error {
 		return err
 	}
 	if repo.IsDirty() {
-		Logf("Skipping checkout for %s. Dependency is dirty.", r.Name)
+		Logf(strings.Repeat("  ", r.Depth())+"NOOP Skipping checkout for %s. Dependency is dirty.", r.Name)
 	}
 	r.Lock()
 	defer r.Unlock()
@@ -244,7 +253,7 @@ func (r *Repo) Checkout(update bool) error {
 	}
 	r.installed = repo.CheckLocal()
 	if !r.installed {
-		Logf("Dependency %s not installed", r.Name)
+		Logf(strings.Repeat("  ", r.Depth())+"WARN Dependency %s not installed", r.Name)
 		return fmt.Errorf("Dependency %s not installed", r.Name)
 	}
 	v := string(version)
@@ -252,22 +261,22 @@ func (r *Repo) Checkout(update bool) error {
 		if repo.IsReference(v) {
 			err = repo.UpdateVersion(v)
 			if err != nil {
-				Logf("Checkout failed with error %s", err.Error())
+				Logf(strings.Repeat("  ", r.Depth())+"FAIL Checkout failed with error %s", err.Error())
 				return err
 			}
 		} else {
-			Logf("Reference %s not found for dependency %s", v, r.Name)
+			Logf(strings.Repeat("  ", r.Depth())+"WARN Reference %s not found for dependency %s", v, r.Name)
 		}
 	}
 	if update {
 		err = repo.Update()
 		if err != nil {
-			Logf("Update failed with error %s", err.Error())
+			Logf(strings.Repeat("  ", r.Depth())+"FAIL Update failed with error %s", err.Error())
 			return err
 		}
 	}
 	r.Reference, err = repo.Version()
-	Logf("OK %s %s", r.Reference, r.Name)
+	Logf(strings.Repeat("  ", r.Depth())+"OK %s %s", r.Reference, r.Name)
 	r.LoadManifest()
 	r.InstallDeps()
 	return err
