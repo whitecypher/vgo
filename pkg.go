@@ -22,10 +22,12 @@ func (e PkgNotFoundError) Error() string {
 
 // NewPkg ...
 func NewPkg(name, dir string, parent *Pkg) *Pkg {
+	// , repo *Repo
 	p := &Pkg{
 		parent: parent,
 		Name:   name,
 		Dir:    dir,
+		// Repo:   repo,
 	}
 	p.Init()
 	return p
@@ -55,9 +57,6 @@ func (p *Pkg) Meta() (bp *build.Package, err error) {
 
 // Init gets the package meta data using the go/build internal package profiler
 func (p *Pkg) Init() {
-	m, _ := p.Meta()
-	p.Name = m.ImportPath
-
 	fmt.Println(strings.Repeat("  ", depth), p.Name)
 	var rp *Repo
 	if p.parent != nil {
@@ -66,7 +65,7 @@ func (p *Pkg) Init() {
 	p.Repo = NewRepo(p.RepoName(), rp)
 
 	// reload the meta since it might have changed after creating NewRepo
-	m, _ = p.Meta()
+	m, _ := p.Meta()
 
 	// pp := p
 	// for err != nil {
@@ -89,7 +88,7 @@ func (p *Pkg) Init() {
 		if native.IsNative(i) {
 			continue
 		}
-		fmt.Println(strings.Repeat("  ", depth), i)
+		// fmt.Println(strings.Repeat("  ", depth), i)
 		dep := NewPkg(i, installPath, p)
 		if dep.RepoName() == p.RepoName() {
 			continue

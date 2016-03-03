@@ -28,9 +28,14 @@ func main() {
 		installPath = path.Join(cwd, "vendor")
 	}
 
-	verbose = true
+	if !ingopath {
+		fmt.Println("Your project isn't in the gopath. We haven't tested this with VGO yet so we recommend you move you project into your gopath.")
+		os.Exit(1)
+	}
 
-	r := NewRepo(".", nil)
+	verbose = true
+	name := strings.Trim(strings.TrimPrefix(cwd, gosrcpath), "/")
+	r := NewRepo(name, nil)
 	vgo := cli.App("vgo", "Installs the dependencies listed in the manifest at the designated reference point.\nIf no manifest exists, `go in` is implied and run automatically to build dependencies and install them.")
 	dry := vgo.BoolOpt("dry", false, "Prevent updates to manifest for trial runs")
 	vgo.Version("v version", version)
@@ -58,8 +63,14 @@ func main() {
 			r.InstallDeps()
 			return
 		}
-		p := NewPkg(".", cwd, nil)
-		r = p.Repo
+		if len(r.Main) > 0 {
+			for _, m := range r.Main {
+				NewPkg(path.Join(name, m), cwd, nil)
+			}
+		} else {
+			NewPkg(name, cwd, nil)
+		}
+
 		// pass command through to go - need to find another way to do this
 		// if len(os.Args) > 1 {
 		// 	args := os.Args[1:]
@@ -78,9 +89,13 @@ func main() {
 		"Scans your project to create/update a manifest of all automatically resolved dependencies",
 		func(cmd *cli.Cmd) {
 			cmd.Action = func() {
-				_ = NewPkg(".", cwd, nil)
-				p := NewPkg(".", cwd, nil)
-				r = p.Repo
+				if len(r.Main) > 0 {
+					for _, m := range r.Main {
+						NewPkg(path.Join(name, m), cwd, nil)
+					}
+				} else {
+					NewPkg(name, cwd, nil)
+				}
 			}
 		},
 	)
@@ -102,6 +117,32 @@ func main() {
 		func(cmd *cli.Cmd) {
 			paths := cmd.StringsArg("PKG", []string{}, "Package to be removed {package/import/path}")
 			cmd.Action = func() {
+			}
+			_ = paths
+		},
+	)
+	vgo.Command(
+		"add-main",
+		"Add a main (entrypoint) package to the project manifest",
+		func(cmd *cli.Cmd) {
+			paths := cmd.StringsArg("PATH", []string{}, "Relative path to main package (entrypoint)")
+			cmd.Action = func() {
+				for _, path := range *paths {
+					r.AddMain(path)
+				}
+			}
+			_ = paths
+		},
+	)
+	vgo.Command(
+		"rm-main",
+		"Remove a main (entrypoint) package from the project manifest",
+		func(cmd *cli.Cmd) {
+			paths := cmd.StringsArg("PATH", []string{}, "Relative path to main package (entrypoint)")
+			cmd.Action = func() {
+				for _, path := range *paths {
+					r.AddMain(path)
+				}
 			}
 			_ = paths
 		},

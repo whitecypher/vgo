@@ -31,7 +31,9 @@ func NewRepo(name string, parent *Repo) *Repo {
 		manifestFile: "vgo.yaml",
 	}
 	repos[name] = r
-	r.Install()
+	if r.parent != nil {
+		r.Install()
+	}
 	return r
 }
 
@@ -46,11 +48,12 @@ type Repo struct {
 	manifestFile string         `yaml:"-"`
 	installed    bool           `yaml:"-"`
 
-	Name         string  `yaml:"name,omitempty"`
-	Version      Version `yaml:"ver,omitempty"`
-	Reference    string  `yaml:"ref,omitempty"`
-	Dependencies []*Repo `yaml:"deps,omitempty"`
-	URL          string  `yaml:"url,omitempty"`
+	Name         string   `yaml:"name,omitempty"`
+	Main         []string `yaml:"main,omitempty"`
+	Version      Version  `yaml:"ver,omitempty"`
+	Reference    string   `yaml:"ref,omitempty"`
+	Dependencies []*Repo  `yaml:"deps,omitempty"`
+	URL          string   `yaml:"url,omitempty"`
 	// UsedPkgs     Pkgs    `yaml:"-"`
 }
 
@@ -70,6 +73,23 @@ func (r *Repo) AddDep(dep *Repo) {
 		return
 	}
 	r.Dependencies = append(r.Dependencies, dep)
+}
+
+// AddMain adds a main (entrypoint) package to the project manifest
+func (r *Repo) AddMain(path string) {
+	r.Main = append(r.Main, path)
+}
+
+// RemoveMain removes a main (entrypoint) package from the project manifest
+func (r *Repo) RemoveMain(path string) {
+	l := []string{}
+	for _, m := range r.Main {
+		if m == path {
+			continue
+		}
+		l = append(l, m)
+	}
+	r.Main = l
 }
 
 // Path calculates the install path for the repository
@@ -340,8 +360,11 @@ func (r *Repo) RepoURL() string {
 	case "golang.org":
 		return fmt.Sprintf("git@github.com:golang/%s.git", parts[2])
 	case "gopkg.in":
-		nameParts := strings.Split(parts[2], ".")
+		nameParts := strings.Split(parts[len(parts)-1], ".")
 		name := strings.Join(nameParts[:len(nameParts)-1], ".")
+		if len(parts) == 2 {
+			parts[1] = fmt.Sprintf("go-%s", name)
+		}
 		r.Version = Version(nameParts[len(nameParts)-1])
 		return fmt.Sprintf("git@github.com:%s/%s.git", parts[1], name)
 	}
