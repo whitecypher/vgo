@@ -6,3 +6,5 @@ deps:
   ref: 772320464101e904cd51198160eb4d489be9cc49
 - name: gopkg.in/yaml.v2
   ref: f7716cbe52baa25d2e9b0d0da546fcf909fc16b4
+- name: github.com/codegangsta/cli
+  ref: aca5b047ed14d17224157c3434ea93bf6cdaadee

@@ -101,6 +101,7 @@ func (r *Repo) Path() string {
 	// return path.Join(r.parent.Path(), "vendor", r.Name)
 }
 
+// Depth resolves the depth of the repo within the dependency tree
 func (r *Repo) Depth() int {
 	if r.parent == nil {
 		return 0
@@ -208,7 +209,7 @@ func (r *Repo) SaveManifest() error {
 // Install the package
 func (r *Repo) Install() error {
 	if r.parent == nil {
-		Logf(strings.Repeat("  ", r.Depth())+"NOOP Skipping project root %s", r.Name)
+		// Logf(strings.Repeat("  ", r.Depth())+"NOOP Skipping project root %s", r.Name)
 		// don't touch the current working directory
 		return nil
 	}
@@ -254,7 +255,7 @@ func (r *Repo) RelPath() string {
 // Checkout switches the package version to the commit nearest maching the Compat string
 func (r *Repo) Checkout(update bool) error {
 	if r.parent == nil {
-		Logf(strings.Repeat("  ", r.Depth())+"NOOP Skipping project root %s", r.Name)
+		Logf(strings.Repeat("  ", r.Depth()-1)+"NOOP Skipping project root %s", r.Name)
 		// don't touch the current working directory
 		return nil
 	}
@@ -263,7 +264,7 @@ func (r *Repo) Checkout(update bool) error {
 		return err
 	}
 	if repo.IsDirty() {
-		Logf(strings.Repeat("  ", r.Depth())+"NOOP Skipping checkout for %s. Dependency is dirty.", r.Name)
+		Logf(strings.Repeat("  ", r.Depth()-1)+"NOOP Skipping checkout for %s. Dependency is dirty.", r.Name)
 	}
 	r.Lock()
 	defer r.Unlock()
@@ -273,7 +274,7 @@ func (r *Repo) Checkout(update bool) error {
 	}
 	r.installed = repo.CheckLocal()
 	if !r.installed {
-		Logf(strings.Repeat("  ", r.Depth())+"WARN Dependency %s not installed", r.Name)
+		Logf(strings.Repeat("  ", r.Depth()-1)+"WARN Dependency %s not installed", r.Name)
 		return fmt.Errorf("Dependency %s not installed", r.Name)
 	}
 	v := string(version)
@@ -281,22 +282,22 @@ func (r *Repo) Checkout(update bool) error {
 		if repo.IsReference(v) {
 			err = repo.UpdateVersion(v)
 			if err != nil {
-				Logf(strings.Repeat("  ", r.Depth())+"FAIL Checkout failed with error %s", err.Error())
+				Logf(strings.Repeat("  ", r.Depth()-1)+"FAIL Checkout failed with error %s", err.Error())
 				return err
 			}
 		} else {
-			Logf(strings.Repeat("  ", r.Depth())+"WARN Reference %s not found for dependency %s", v, r.Name)
+			Logf(strings.Repeat("  ", r.Depth()-1)+"WARN Reference %s not found for dependency %s", v, r.Name)
 		}
 	}
 	if update {
 		err = repo.Update()
 		if err != nil {
-			Logf(strings.Repeat("  ", r.Depth())+"FAIL Update failed with error %s", err.Error())
+			Logf(strings.Repeat("  ", r.Depth()-1)+"FAIL Update failed with error %s", err.Error())
 			return err
 		}
 	}
 	r.Reference, err = repo.Version()
-	Logf(strings.Repeat("  ", r.Depth())+"OK %s %s", r.Reference, r.Name)
+	Logf(strings.Repeat("  ", r.Depth()-1)+"OK %s %s", r.Reference, r.Name)
 	r.LoadManifest()
 	r.InstallDeps()
 	return err

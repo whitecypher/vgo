@@ -3,13 +3,14 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"strings"
 
 	"gopkg.in/yaml.v2"
 
-	"github.com/jawher/mow.cli"
+	"github.com/codegangsta/cli"
 )
 
 var (
@@ -36,16 +37,25 @@ func main() {
 	verbose = true
 	name := strings.Trim(strings.TrimPrefix(cwd, gosrcpath), "/")
 	r := NewRepo(name, nil)
-	vgo := cli.App("vgo", "Installs the dependencies listed in the manifest at the designated reference point.\nIf no manifest exists, `go in` is implied and run automatically to build dependencies and install them.")
-	dry := vgo.BoolOpt("dry", false, "Prevent updates to manifest for trial runs")
-	vgo.Version("v version", version)
-	vgo.Spec = "[--dry]"
-	vgo.Before = func() {
-		r.LoadManifest()
+
+	vgo := cli.NewApp()
+	vgo.Name = "vgo"
+	vgo.Usage = "Installs the dependencies listed in the manifest at the designated reference point.\nIf no manifest exists, `go in` is implied and run automatically to build dependencies and install them."
+	vgo.Version = version
+	vgo.EnableBashCompletion = true
+	vgo.Flags = []cli.Flag{
+		cli.BoolFlag{
+			Name:  "dry",
+			Usage: "Prevent updates to manifest for trial runs",
+		},
 	}
-	vgo.After = func() {
-		if !*dry {
-			err := r.SaveManifest()
+	vgo.Before = func(c *cli.Context) (err error) {
+		r.LoadManifest()
+		return
+	}
+	vgo.After = func(c *cli.Context) (err error) {
+		if !c.Bool("dry") {
+			err = r.SaveManifest()
 			if err != nil {
 				fmt.Println(err.Error())
 			}
@@ -57,38 +67,20 @@ func main() {
 			}
 			fmt.Println(string(data))
 		}
+		return err
 	}
-	vgo.Action = func() {
-		if r.hasManifest {
-			r.InstallDeps()
-			return
-		}
-		if len(r.Main) > 0 {
-			for _, m := range r.Main {
-				NewPkg(path.Join(name, m), cwd, nil)
-			}
-		} else {
-			NewPkg(name, cwd, nil)
-		}
-
-		// pass command through to go - need to find another way to do this
-		// if len(os.Args) > 1 {
-		// 	args := os.Args[1:]
-		// 	if args[0] == "--dry" {
-		// 		args = args[1:]
-		// 	}
-		// cmd := exec.Command("go", args...)
-		// cmd.Stdout = os.Stdout
-		// cmd.Stdin = os.Stdin
-		// cmd.Stderr = os.Stderr
-		// cmd.Run()
-		// }
-	}
-	vgo.Command(
-		"in",
-		"Scans your project to create/update a manifest of all automatically resolved dependencies",
-		func(cmd *cli.Cmd) {
-			cmd.Action = func() {
+	// client.Authors = []cli.Author{
+	// 	{
+	// 		Name:  "Merten van Gerven",
+	// 		Email: "merten.vg@gmail.com",
+	// 	},
+	// }
+	vgo.Commands = []cli.Command{
+		{
+			Name:        "discover",
+			Usage:       "Discover dependencies",
+			Description: `Scan project for packages, install them if not already vendored and store results into vgo.yaml`,
+			Action: func(c *cli.Context) {
 				if len(r.Main) > 0 {
 					for _, m := range r.Main {
 						NewPkg(path.Join(name, m), cwd, nil)
@@ -96,57 +88,75 @@ func main() {
 				} else {
 					NewPkg(name, cwd, nil)
 				}
-			}
+			},
 		},
-	)
-	vgo.Command(
-		"get",
-		"Get a dependency compatible with the optionally specified version, branch, tag, or commit",
-		func(cmd *cli.Cmd) {
-			update := cmd.BoolOpt("u", false, "Update the package to the latest compatible reference")
-			paths := cmd.StringsArg("PKG", []string{}, "Package to be installed {package/import/path#compat}")
-			cmd.Action = func() {
-			}
-			_ = update
-			_ = paths
+		{
+			Name:        "get",
+			Usage:       "Get a dependency",
+			Description: `Get a dependency compatible with the optionally specified version, branch, tag, or commit`,
+			Flags: []cli.Flag{
+				cli.BoolFlag{
+					Name:  "u",
+					Usage: "Update the package to the latest compatible reference",
+				},
+			},
+			Action: func(c *cli.Context) {
+			},
 		},
-	)
-	vgo.Command(
-		"rm",
-		"Scans your project to create/update a manifest of all automatically resolved dependencies",
-		func(cmd *cli.Cmd) {
-			paths := cmd.StringsArg("PKG", []string{}, "Package to be removed {package/import/path}")
-			cmd.Action = func() {
-			}
-			_ = paths
+		{
+			Name:        "remove",
+			Usage:       "Remove a dependency",
+			Description: `Remove one or more dependencies matching the given paths`,
+			Action: func(c *cli.Context) {
+			},
 		},
-	)
-	vgo.Command(
-		"add-main",
-		"Add a main (entrypoint) package to the project manifest",
-		func(cmd *cli.Cmd) {
-			paths := cmd.StringsArg("PATH", []string{}, "Relative path to main package (entrypoint)")
-			cmd.Action = func() {
-				for _, path := range *paths {
-					r.AddMain(path)
-				}
-			}
-			_ = paths
+		{
+			Name: "main",
+			// Aliases:     []string{"up"},
+			Usage: "Manage application entry points",
+			// Description: ``,
+			Subcommands: []cli.Command{
+				{
+					Name:        "add",
+					Usage:       "Add an entrypoint",
+					Description: `Add a main (entrypoint) package to the project manifest`,
+					Action: func(c *cli.Context) {
+						paths := c.Args()
+						for _, path := range paths {
+							r.AddMain(path)
+						}
+					},
+				},
+				{
+					Name:        "remove",
+					Usage:       "Remove an entrypoint",
+					Description: `Remove a main (entrypoint) package from the project manifest`,
+					Action: func(c *cli.Context) {
+						paths := c.Args()
+						for _, path := range paths {
+							r.RemoveMain(path)
+						}
+					},
+				},
+			},
 		},
-	)
-	vgo.Command(
-		"rm-main",
-		"Remove a main (entrypoint) package from the project manifest",
-		func(cmd *cli.Cmd) {
-			paths := cmd.StringsArg("PATH", []string{}, "Relative path to main package (entrypoint)")
-			cmd.Action = func() {
-				for _, path := range *paths {
-					r.AddMain(path)
-				}
+	}
+	vgo.Action = func(c *cli.Context) {
+		if r.hasManifest {
+			r.InstallDeps()
+		}
+		// pass command through to go
+		args := c.Args()
+		if len(args) > 0 {
+			if args[0] == "--dry" {
+				args = args[1:]
 			}
-			_ = paths
-		},
-	)
-
+			cmd := exec.Command("go", args...)
+			cmd.Stdout = os.Stdout
+			cmd.Stdin = os.Stdin
+			cmd.Stderr = os.Stderr
+			cmd.Run()
+		}
+	}
 	vgo.Run(os.Args)
 }

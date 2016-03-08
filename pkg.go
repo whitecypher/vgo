@@ -63,27 +63,9 @@ func (p *Pkg) Init() {
 		rp = p.parent.Repo
 	}
 	p.Repo = NewRepo(p.RepoName(), rp)
-
-	// reload the meta since it might have changed after creating NewRepo
 	m, _ := p.Meta()
 
-	// pp := p
-	// for err != nil {
-	// 	dir := p.VendorPath()
-	// 	m, err = build.Import(p.Name, dir, build.ImportMode(0))
-	// 	if pp == nil {
-	// 		break
-	// 	}
-	// 	pp = pp.parent
-	// }
-
 	depth++
-
-	// if _, ok := err.(*build.NoGoError); !ok {
-	// 	Logf("Unable to import package %s in %s with error %s", p.Name, p.Dir, err.Error())
-	// 	return
-	// }
-
 	for _, i := range m.Imports {
 		if native.IsNative(i) {
 			continue
@@ -95,25 +77,8 @@ func (p *Pkg) Init() {
 		}
 		p.Repo.AddDep(dep.Repo)
 	}
-
 	depth--
 }
-
-// VendorPath ...
-// func (p *Pkg) VendorPath() string {
-// 	if p.parent == nil {
-// 		return path.Join(cwd, "vendor")
-// 	}
-// 	return path.Join(p.parent.VendorPath(), p.Name, "vendor")
-// }
-
-// MapDeps ...
-// func (p *Pkg) MapDeps(mapper func(parent *Pkg, dependency *Pkg)) {
-// 	for _, d := range p.Deps {
-// 		mapper(p, d)
-// 		d.MapDeps(mapper)
-// 	}
-// }
 
 // ImportName ...
 func (p *Pkg) ImportName() string {
@@ -141,33 +106,3 @@ func (p *Pkg) RepoName() string {
 func (p *Pkg) RepoPath() string {
 	return strings.TrimSuffix(p.Dir, p.SubPath())
 }
-
-// Print ...
-// func (p *Pkg) Print(w io.Writer, indent string) {
-// 	p.print(w, indent, 0)
-// }
-
-//
-// func (p *Pkg) print(w io.Writer, indent string, depth int) {
-// 	w.Write([]byte(strings.Repeat(indent, depth) + p.Name + "\n"))
-// 	for _, d := range p.Deps {
-// 		d.print(w, indent, depth+1)
-// 	}
-// }
-
-// Pkgs list
-// type Pkgs []*Pkg
-
-// Init all pkgs in list
-// func (ps Pkgs) Init() {
-// 	for _, p := range ps {
-// 		p.Init()
-// 	}
-// }
-
-// MapDeps ...
-// func (ps Pkgs) MapDeps(mapper func(parent *Pkg, dependency *Pkg)) {
-// 	for _, p := range ps {
-// 		p.MapDeps(mapper)
-// 	}
-// }
