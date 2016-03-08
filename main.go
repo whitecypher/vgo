@@ -40,7 +40,7 @@ func main() {
 
 	vgo := cli.NewApp()
 	vgo.Name = "vgo"
-	vgo.Usage = "Installs the dependencies listed in the manifest at the designated reference point.\nIf no manifest exists, `go in` is implied and run automatically to build dependencies and install them."
+	vgo.Usage = "Installs the dependencies listed in the manifest at the designated reference point.\n   If no manifest exists, use `vgo discover` to resolve dependencies and create one."
 	vgo.Version = version
 	vgo.EnableBashCompletion = true
 	vgo.Flags = []cli.Flag{
@@ -105,6 +105,7 @@ func main() {
 		},
 		{
 			Name:        "remove",
+			Aliases:     []string{"rm"},
 			Usage:       "Remove a dependency",
 			Description: `Remove one or more dependencies matching the given paths`,
 			Action: func(c *cli.Context) {
@@ -113,7 +114,7 @@ func main() {
 		{
 			Name: "main",
 			// Aliases:     []string{"up"},
-			Usage: "Manage application entry points",
+			Usage: "Manage (add/remove) application entry points",
 			// Description: ``,
 			Subcommands: []cli.Command{
 				{
@@ -129,6 +130,7 @@ func main() {
 				},
 				{
 					Name:        "remove",
+					Aliases:     []string{"rm"},
 					Usage:       "Remove an entrypoint",
 					Description: `Remove a main (entrypoint) package from the project manifest`,
 					Action: func(c *cli.Context) {
