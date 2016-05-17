@@ -17,9 +17,6 @@ import (
 
 var repos = make(map[string]*Repo)
 
-// Version compatibility string e.g. "~1.0.0" or "1.*"
-type Version string
-
 // NewRepo creates and initializes a Repo
 func NewRepo(name string, parent *Repo) *Repo {
 	if r, ok := repos[name]; ok {
@@ -270,14 +267,14 @@ func (r *Repo) Checkout(update bool) error {
 	defer r.Unlock()
 	version := r.Version
 	if r.Reference != "" {
-		version = Version(r.Reference)
+		version = VersionFromString(r.Reference)
 	}
 	r.installed = repo.CheckLocal()
 	if !r.installed {
 		Logf(strings.Repeat("  ", r.Depth()-1)+"WARN Dependency %s not installed", r.Name)
 		return fmt.Errorf("Dependency %s not installed", r.Name)
 	}
-	v := string(version)
+	v := version.String()
 	if len(v) > 0 {
 		if repo.IsReference(v) {
 			err = repo.UpdateVersion(v)
@@ -366,7 +363,7 @@ func (r *Repo) RepoURL() string {
 		if len(parts) == 2 {
 			parts[1] = fmt.Sprintf("go-%s", name)
 		}
-		r.Version = Version(nameParts[len(nameParts)-1])
+		r.Version = VersionFromString(nameParts[len(nameParts)-1])
 		return fmt.Sprintf("git@github.com:%s/%s.git", parts[1], name)
 	}
 	return ""

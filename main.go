@@ -146,6 +146,15 @@ func main() {
 	vgo.Action = func(c *cli.Context) {
 		if r.hasManifest {
 			r.InstallDeps()
+		} else {
+			Log("No manifest found. Running discover task.")
+			if len(r.Main) > 0 {
+				for _, m := range r.Main {
+					NewPkg(path.Join(name, m), cwd, nil)
+				}
+			} else {
+				NewPkg(name, cwd, nil)
+			}
 		}
 		// pass command through to go
 		args := c.Args()
