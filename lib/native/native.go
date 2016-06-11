@@ -17,7 +17,7 @@ var (
 func init() {
 	root := runtime.GOROOT()
 	if len(root) == 0 {
-		fmt.Print("Go not installed or missing GOROOT environment value")
+		fmt.Println("Go not installed or missing GOROOT environment value")
 		os.Exit(1)
 	}
 	src := path.Join(root, "src")
@@ -25,7 +25,7 @@ func init() {
 	for _, d := range dirs {
 		rel, err := filepath.Rel(src, d)
 		if err != nil {
-			fmt.Print("Unable to resolve native packages with error:", err.Error())
+			fmt.Println("Unable to resolve native packages with error:", err.Error())
 			os.Exit(1)
 		}
 		pkgs = append(pkgs, rel)
@@ -38,7 +38,7 @@ func init() {
 func listDirsRecursive(dir string) (r []string) {
 	dirs, err := ioutil.ReadDir(dir)
 	if err != nil {
-		fmt.Printf("Unable to read dir %s with error: %s", dir, err.Error())
+		fmt.Printf("Unable to read dir %s with error: %s\n", dir, err.Error())
 		return
 	}
 	for _, d := range dirs {
