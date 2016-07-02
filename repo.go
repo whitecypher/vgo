@@ -15,22 +15,22 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-var repos = make(map[string]*Repo)
+var repoMap = make(map[string]*Repo)
 
 // NewRepo creates and initializes a Repo
-func NewRepo(name string, parent *Repo) *Repo {
-	if r, ok := repos[name]; ok {
+func NewRepo(name string, version Version, parent *Repo, manifestFilePath string) *Repo {
+	if r, ok := repoMap[name]; ok {
 		return r
 	}
 	r := &Repo{
 		parent:       parent,
 		Name:         name,
-		manifestFile: "vgo.yaml",
+		manifestFile: manifestFilePath,
 	}
-	repos[name] = r
-	if r.parent != nil {
-		r.Install()
-	}
+	repoMap[name] = r
+	// if r.parent != nil {
+	// 	r.Install()
+	// }
 	return r
 }
 

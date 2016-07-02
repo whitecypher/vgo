@@ -8,12 +8,17 @@ import (
 )
 
 // MustGetwd handles the error returned by Getwd or returns the returns the resulting current working directory path.
-func MustGetwd(cwd string, err error) string {
+func MustGetwd() string {
+	cwd, err := os.Getwd()
 	if err != nil {
-		fmt.Println(err.Error())
+		fmt.Printf("Unable to resolve current working directory with error: %s\n", err.Error())
 		os.Exit(1)
 	}
 	return cwd
+}
+
+func resolveManifestFilePath(dir string) string {
+	return filepath.Join(dir, "vgo.yaml")
 }
 
 // PackageRepoMapper maps packages to repositories

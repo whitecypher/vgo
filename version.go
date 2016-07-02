@@ -5,11 +5,20 @@ type VersionType int
 
 // VersionType constants
 const (
-	VersionTypeRef VersionType = iota
+	VersionTypeNone VersionType = iota
+	VersionTypeRef
 	VersionTypeBranch
 	VersionTypeTag
 	VersionTypeSemVer
 )
+
+var noVersion = Version{
+	Kind: VersionTypeNone,
+}
+
+func NoVersion() Version {
+	return noVersion
+}
 
 // VersionFromString creates a Version instance from a string
 func VersionFromString(v string) Version {

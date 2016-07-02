@@ -17,7 +17,7 @@ var (
 	gopath       = os.Getenv("GOPATH")
 	gosrcpath    = filepath.Join(gopath, "src")
 	installPath  = gosrcpath
-	cwd          = MustGetwd(os.Getwd())
+	cwd          = MustGetwd()
 	manifestPath = cwd
 	vendoring    = os.Getenv("GO15VENDOREXPERIMENT") == "1"
 	ingopath     = strings.HasPrefix(cwd, gosrcpath)
@@ -35,8 +35,11 @@ func main() {
 	}
 
 	verbose = true
-	name := strings.Trim(strings.TrimPrefix(cwd, gosrcpath), "/")
-	r := NewRepo(name, nil)
+	name, err := filepath.Rel(gosrcpath, cwd)
+	if err != nil {
+		name = filepath.Base(cwd)
+	}
+	r := NewRepo(name, nil, resolveManifestFilePath(cwd))
 
 	vgo := cli.NewApp()
 	vgo.Name = "vgo"
